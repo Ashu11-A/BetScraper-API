@@ -20,7 +20,7 @@ export default new Router({
           return reply.status(500).send(JSON.stringify(parsed.error))
         }
 
-        const exist = await Bet.findOne({ where: { id: parsed.data.id } })
+        const exist = await Bet.findOneBy({ id: parsed.data.id })
         if (exist === null) return reply.status(404).send(new Error('Bet not found'))
 
         await exist.remove()

@@ -18,6 +18,7 @@ export class Task extends BaseEntity {
   @Generated('uuid')
     uuid!: string
 
+  @ManyToOne(() => Bet, (bet) => bet.tasks, { cascade: true, onDelete: 'CASCADE' })
     bet!: Relation<Bet>
   @ManyToOne(() => User, (user) => user.tasks, { nullable: true, cascade: true })
     user?: Relation<User>

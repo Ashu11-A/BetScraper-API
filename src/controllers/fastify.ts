@@ -30,7 +30,7 @@ export class Fastify {
 
     server
       .register(cookie, {
-        secret: 'asodjihuqwoidg98qyhlaishbdlajbjdo2e098oijn'
+        secret: process.env['COOKIE_TOKEN']
       })
       .register(multipart, {
       // attachFieldsToBody: true,

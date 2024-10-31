@@ -29,8 +29,9 @@ export class User extends BaseEntity {
     lastExecutedAt?: Date
   @Column('timestamp', { nullable: true })
     nextExecutionAt?: Date
-  @UpdateDateColumn()
-    updated_at!: Date
-  @CreateDateColumn()
-    created_at!: Date
+
+  @UpdateDateColumn({ type: 'timestamp' })
+    updatedAt!: number
+  @CreateDateColumn({ type: 'timestamp' })
+    createdAt!: number
 }

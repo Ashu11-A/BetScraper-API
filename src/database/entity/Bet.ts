@@ -1,4 +1,4 @@
-import { BaseEntity, Column, Entity, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm'
+import { BaseEntity, Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn, type Relation } from 'typeorm'
 import Infraction from './Infraction.js'
 import { Task } from './Task.js'
 
@@ -32,4 +32,9 @@ export default class Bet extends BaseEntity {
     infractions!: Relation<Infraction[]>
   @OneToMany(() => Task, (task) => task.bet)
     tasks!: Relation<Task[]>
+
+  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
+    updatedAt!: number
+  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })
+    createdAt!: number
 }

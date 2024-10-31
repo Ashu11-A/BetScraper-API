@@ -18,7 +18,6 @@ export class Task extends BaseEntity {
   @Generated('uuid')
     uuid!: string
 
-  @ManyToOne(() => Bet, (bet) => bet.tasks, { cascade: true })
     bet!: Relation<Bet>
   @ManyToOne(() => User, (user) => user.tasks, { nullable: true, cascade: true })
     user?: Relation<User>
@@ -37,12 +36,12 @@ export class Task extends BaseEntity {
   @Column({ type: 'int', nullable: true })
     duration?: number
 
-  @UpdateDateColumn()
-    updateAt!: Date
   @Column({ type: 'timestamp', nullable: true })
     scheduledAt?: Date
   @Column('timestamp', { nullable: true })
     finishedAt?: Date
-  @CreateDateColumn()
-    createAt!: Date
+  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
+    updatedAt!: number
+  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })
+    createdAt!: number
 }

@@ -6,8 +6,8 @@ export default class Infraction {
   @PrimaryGeneratedColumn()
     id!: number
 
-    @Column()
-      name!: string
+  @Column()
+    value!: string
 
   @ManyToOne(() => Bet, (bet) => bet.infractions)
     bets!: Relation<Bet[]>

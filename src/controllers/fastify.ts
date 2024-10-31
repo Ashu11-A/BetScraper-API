@@ -8,6 +8,8 @@ import fastify, { FastifyInstance } from 'fastify'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import fastifyMultipart from '@fastify/multipart'
+import fastifyStatic from '@fastify/static'
+import { storagePath } from '@/index.js'
 
 export const fastifyPassport = new Authenticator()
 
@@ -37,6 +39,9 @@ export class Fastify {
         limits: {
           fileSize: 1024 * 1024 * 10
         }
+      })
+      .register(fastifyStatic, {
+        root: storagePath,
       })
       .register(websocket)
       .register(SecureSession, { key: readFileSync(join(process.cwd(), 'secret-key')) })

@@ -37,12 +37,11 @@ export default new Router({
         }
 
         const password = await hash(parsed.data.password, saltRounds)
-        const user = User.create({
+        const user = await User.create({
           ...parsed.data,
           password
-        })
+        }).save()
 
-        User.save(user)
         return reply.send(JSON.stringify(user))
       }
     }

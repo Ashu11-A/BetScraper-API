@@ -11,5 +11,4 @@ export default class Infraction {
 
   @ManyToOne(() => Bet, (bet) => bet.infractions)
     bets!: Relation<Bet[]>
-
 }

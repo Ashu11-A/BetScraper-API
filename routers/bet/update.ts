@@ -23,15 +23,10 @@ export default new Router({
           return reply.status(500).send(JSON.stringify(parsed.error))
         }
 
-        const exist = await Bet.findOne({
-          where: [
-            { name: parsed.data.name },
-            { url: parsed.data.url }
-          ]
-        })
+        const exist = await Bet.findOneBy({ id: parsed.data.id })
 
         if (exist === null) {
-          return reply.status(422).send(new Error('Name or URL already registered in the database'))
+          return reply.status(422).send(new Error('Bet not found'))
         }
 
         const bet = await Bet.update({ id: exist.id }, { ...parsed.data })

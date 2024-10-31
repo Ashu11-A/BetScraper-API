@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -28,6 +28,6 @@
     },
     "typeRoots": ["src/types/**/*.d.ts"]
   },
-  "include": ["src", "routers"],
+  "include": ["src", "routers", "queues"],
   "exclude": ["node_modules", "dist"]
 }

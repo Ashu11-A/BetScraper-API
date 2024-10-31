@@ -1,6 +1,10 @@
 import { Router } from '@/controllers/router.js'
+import dataSource from '@/database/dataSource.js'
 import Bet from '@/database/entity/Bet.js'
+import { paginate, paginateSchema } from '@/database/pagination.js'
 import { MethodType } from '@/types/router.js'
+
+const betRepository = dataSource.getRepository(Bet)
 
 export default new Router({
   name: 'List',
@@ -10,11 +14,30 @@ export default new Router({
     {
       type: MethodType.Get,
       authenticate: ['bearer'],
-      async run(__request, reply) {
-        const bets = await Bet.find()
+      async run(request, reply) {
+        const parsed = paginateSchema.safeParse(request.query)
+        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
+          
+        const { page, pageSize, interval, day } = parsed.data
 
-        return reply.send(JSON.stringify(bets))
+        try {
+          const bets = await paginate({
+            repository: betRepository,
+            page,
+            pageSize,
+            interval,
+            day
+          })
+
+          return reply.send(JSON.stringify(bets))
+        } catch (error) {
+          console.error('Error fetching bets:', error)
+          return reply.status(500).send({
+            error: 'Internal Server Error',
+            message: 'Failed to fetch bets',
+          })
+        }
       },
-    }
-  ]
+    },
+  ],
 })

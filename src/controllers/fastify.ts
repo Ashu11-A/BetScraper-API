@@ -1,6 +1,5 @@
 import { BearerStrategy } from '@/strategies/BearerStrategy.js'
 import cookie from '@fastify/cookie'
-import multipart from '@fastify/multipart'
 import { Authenticator } from '@fastify/passport'
 import SecureSession from '@fastify/secure-session'
 import websocket from '@fastify/websocket'
@@ -8,6 +7,7 @@ import { execSync } from 'child_process'
 import fastify, { FastifyInstance } from 'fastify'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import fastifyMultipart from '@fastify/multipart'
 
 export const fastifyPassport = new Authenticator()
 
@@ -32,7 +32,7 @@ export class Fastify {
       .register(cookie, {
         secret: process.env['COOKIE_TOKEN']
       })
-      .register(multipart, {
+      .register(fastifyMultipart, {
       // attachFieldsToBody: true,
         limits: {
           fileSize: 1024 * 1024 * 10

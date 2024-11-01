@@ -1,10 +1,8 @@
 import { Router } from '@/controllers/router.js'
-import dataSource from '@/database/dataSource.js'
-import Bet from '@/database/entity/Bet.js'
+import { betRepository } from '@/database/index.js'
 import { paginate, paginateSchema } from '@/database/pagination.js'
 import { MethodType } from '@/types/router.js'
 
-const betRepository = dataSource.getRepository(Bet)
 
 export default new Router({
   name: 'List',
@@ -17,7 +15,6 @@ export default new Router({
       async run(request, reply) {
         const parsed = paginateSchema.safeParse(request.query)
         if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
-          
         const { page, pageSize, interval, day } = parsed.data
 
         try {

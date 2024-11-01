@@ -1,10 +1,7 @@
 import { Router } from '@/controllers/router.js'
-import dataSource from '@/database/dataSource.js'
-import { User } from '@/database/entity/User.js'
+import { userRepository } from '@/database/index.js'
 import { paginate, paginateSchema } from '@/database/pagination.js'
 import { MethodType } from '@/types/router.js'
-
-const userRepository = dataSource.getRepository(User)
 
 export default new Router({
   name: 'Users',

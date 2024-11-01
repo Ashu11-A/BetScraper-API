@@ -25,11 +25,6 @@ export class User extends BaseEntity {
   @Column({ type: 'text' })
     password!: string
 
-  @Column('timestamp', { nullable: true })
-    lastExecutedAt?: Date
-  @Column('timestamp', { nullable: true })
-    nextExecutionAt?: Date
-
   @UpdateDateColumn({ type: 'timestamp' })
     updatedAt!: number
   @CreateDateColumn({ type: 'timestamp' })

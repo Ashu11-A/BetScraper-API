@@ -14,6 +14,11 @@ export class Cron extends BaseEntity {
   @OneToMany(() => Task, (task) => task.cron)
     tasks!: Relation<Task[]>
 
+  @Column('timestamp', { nullable: true })
+    lastExecutedAt?: Date
+  @Column('timestamp', { nullable: true })
+    nextExecutionAt?: Date
+
   @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
     updatedAt!: number
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })

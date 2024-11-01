@@ -33,6 +33,7 @@ const updateSchema = z.object({
 export default new Router({
   name: 'Cron',
   description: 'Cron Manager',
+  path: '/cron',
   method: [
     {
       type: MethodType.Get,

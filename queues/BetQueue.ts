@@ -18,6 +18,12 @@ type BetQueueType = {
   task: Task
 }
 
+const keywords = [
+  'créditos', 'bônus', 'crédito', 'bônu',
+  'incentivo', 'gratificação',
+  'bonificação', 'abono', 'saldo extra',
+]
+
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
 
@@ -38,11 +44,7 @@ export class BetQueue {
 BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
   try {
     console.log(`Starting Job ID: ${job.id}`)
-    const keywords = [
-      'créditos', 'bônus', 'crédito', 'bônu',
-      'incentivo', 'gratificação',
-      'bonificação', 'abono', 'saldo extra',
-    ]
+
     const scraper = new Scraper(job.data.task.bet.url, keywords)
     await scraper.loadPage()
 
@@ -58,7 +60,7 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
   
     await scraper.browser.close()
     
-    const dirToSave = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createAt}`)
+    const dirToSave = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
     await mkdir(dirToSave, { recursive: true })
   
     for (const [number, evidence] of Object.entries(filteredEvidences)) {

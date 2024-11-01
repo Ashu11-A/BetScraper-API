@@ -2,7 +2,6 @@ import { Between, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm'
 import { addYears, subYears, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfHour, endOfHour } from 'date-fns'
 import { z } from 'zod'
 
-// TypeORM Query Operators
 export const AfterDate = (date: Date) => Between(date, addYears(date, 100))
 export const BeforeDate = (date: Date) => Between(subYears(date, 100), date)
 
@@ -27,28 +26,29 @@ export const paginateSchema = z.object({
     return !isNaN(date.getTime())
   }, { message: 'Invalid date format for day' }),
 })
-
-
-export async function paginate<T extends ObjectLiteral>({
+ 
+export async function paginate<Additional extends ObjectLiteral, T extends ObjectLiteral>({
   repository,
   page,
   pageSize,
   interval,
   day,
+  ...args
 }: {
-  repository: Repository<T>;
-  page: number;
-  pageSize: number;
-  interval: 'month' | 'day' | 'hour' | 'none';
-  day?: string;
-}) {
-  // Se 'day' não for fornecido, use a data atual
+    repository: Repository<T>
+    page: number
+    pageSize: number
+    interval: 'month' | 'day' | 'hour' | 'none'
+    day?: string
+  } & FindOptionsWhere<T> & Additional
+) {
   const targetDate = day ? new Date(day) : new Date()
+
+  console.log(args)
   
   let start: Date | undefined = undefined
   let end: Date | undefined = undefined
 
-  // Define os limites de acordo com o intervalo especificado
   switch (interval) {
   case 'day':
     start = startOfDay(targetDate)
@@ -65,11 +65,17 @@ export async function paginate<T extends ObjectLiteral>({
   }
 
   const whereCondition: FindOptionsWhere<T> = {
-    createdAt: Between(start, end) as unknown as T[keyof T], // forçando a tipagem
+    createdAt: (start !== undefined && end !== undefined) ? (Between(start, end) as unknown as T[keyof T]) : undefined, // forçando a tipagem
+    ...args
   }
 
+  const relations = repository.metadata.relations
+  // Para evitar o envio do password do usuário
+    .filter((relation) => relation.propertyName !== 'user')
+    .map((relation) => relation.propertyName)
   const [data, total] = await repository.findAndCount({
-    where: (start !== undefined && end !== undefined) ? whereCondition : undefined,
+    where: whereCondition,
+    relations,
     skip: (page - 1) * pageSize,
     take: pageSize,
   })

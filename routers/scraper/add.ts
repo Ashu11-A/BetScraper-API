@@ -3,7 +3,7 @@ import Bet from '@/database/entity/Bet.js'
 import { Cron } from '@/database/entity/Cron.js'
 import { User } from '@/database/entity/User.js'
 import { MethodType } from '@/types/router.js'
-import { BetQueue } from 'queues/BetQueue.js'
+import { BetQueue } from '@/queues/BetQueue.js'
 import { z } from 'zod'
 
 const schema = z.object({

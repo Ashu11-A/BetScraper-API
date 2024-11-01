@@ -28,6 +28,6 @@
     },
     "typeRoots": ["src/types/**/*.d.ts"]
   },
-  "include": ["src", "routers", "queues"],
+  "include": ["src", "routers"],
   "exclude": ["node_modules", "dist"]
 }

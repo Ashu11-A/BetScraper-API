@@ -1,15 +1,16 @@
+import { User } from '@/database/entity/User.js'
+import { storagePath } from '@/index.js'
 import { BearerStrategy } from '@/strategies/BearerStrategy.js'
 import cookie from '@fastify/cookie'
+import fastifyMultipart from '@fastify/multipart'
 import { Authenticator } from '@fastify/passport'
 import SecureSession from '@fastify/secure-session'
+import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import { execSync } from 'child_process'
 import fastify, { FastifyInstance } from 'fastify'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import fastifyMultipart from '@fastify/multipart'
-import fastifyStatic from '@fastify/static'
-import { storagePath } from '@/index.js'
 
 export const fastifyPassport = new Authenticator()
 
@@ -47,7 +48,15 @@ export class Fastify {
       .register(SecureSession, { key: readFileSync(join(process.cwd(), 'secret-key')) })
       .register(fastifyPassport.initialize())
       .register(fastifyPassport.secureSession())
-  
+    
+    fastifyPassport.registerUserSerializer<User, string>(async (user) => {
+      console.log('registerUserSerializer', user)
+      return user.uuid
+    })
+    fastifyPassport.registerUserDeserializer<string, User | null>(async (uuid) => {
+      console.log('registerUserDeserializer', uuid)
+      return await User.findOneBy({ uuid })
+    })
     fastifyPassport.use('bearer', new BearerStrategy())
 
     Fastify.server = server

@@ -236,7 +236,7 @@ export class Scraper {
   async filterScreenshots(evidences: Evidence[]) {
     const filteredEvidences: Evidence[] = []
     
-    for (const [index, evidence] of Object.entries(evidences)) {
+    for (const evidence of evidences) {
       try {
         // Salva o buffer como arquivo temporário
         const tempImagePath = join(tmpdir(), `temp-image-${Date.now()}.png`)
@@ -245,8 +245,6 @@ export class Scraper {
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
 
-        await writeFile(`${index}.json`, JSON.stringify(data))
-  
         // Filtra as imagens conforme as palavras-chave
         if (this.keywords.filter(keyword => data.text.includes(keyword)).length > 0) {
           filteredEvidences.push(evidence)

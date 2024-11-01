@@ -131,3 +131,4 @@ secret-key
 *.png
 /storage
 *.traineddata
+/.vscode

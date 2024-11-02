@@ -5,6 +5,7 @@ import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
 import { Scraper } from '@/lib/scraper.js'
+import { bonusKeywords } from '@/shared/consts/keywords/bonuses.js'
 import { Job } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -17,12 +18,6 @@ type AddBetQueue = {
 type BetQueueType = {
   task: Task
 }
-
-const keywords = [
-  'créditos', 'bônus', 'crédito', 'bônu',
-  'incentivo', 'gratificação',
-  'bonificação', 'abono', 'saldo extra',
-]
 
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
@@ -45,7 +40,7 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
   try {
     console.log(`Starting Job ID: ${job.id}`)
 
-    const scraper = new Scraper(job.data.task.bet.url, keywords)
+    const scraper = new Scraper(job.data.task.bet.url, bonusKeywords)
     await scraper.loadPage()
 
     const initImage = await scraper.getScreenshotInitPage()

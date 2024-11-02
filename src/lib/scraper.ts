@@ -10,9 +10,9 @@ class Evidence {
   isVisible: boolean
   isHidden: boolean
   isIntersectingViewport: boolean
-  print: Uint8Array<ArrayBufferLike>
+  print: Uint8Array
 
-  constructor ({  isHidden, isIntersectingViewport, isVisible, print }: Evidence) {
+  constructor({ isHidden, isIntersectingViewport, isVisible, print }: Evidence) {
     this.isHidden = isHidden
     this.isIntersectingViewport = isIntersectingViewport
     this.isVisible = isVisible
@@ -26,7 +26,7 @@ export class Scraper {
   // private __dirname = dirname(fileURLToPath(import.meta.url))
   public browser!: Browser
 
-  constructor(public readonly url: string, public readonly keywords: string[]) {}
+  constructor(public readonly url: string, public readonly keywords: string[]) { }
 
   async loadPage() {
     this.browser = await puppeteer.launch({
@@ -39,7 +39,7 @@ export class Scraper {
         '--disk-cache-size=0',
         '--media-cache-size=0',
         '--disable-site-isolation-trials',
-        
+
         // Security & privacy
         '--incognito',
         '--disable-client-side-phishing-detection',
@@ -51,14 +51,14 @@ export class Scraper {
         '--disable-features=PaintHolding',
         '--force-device-scale-factor=1',
         '--hide-scrollbars',
-        
+
         // Anti-bot
         '--window-size=1366,768',
         '--disable-blink-features=AutomationControlled',
-        
+
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        
+
         // Fix: NSS error code: -8018
         '--ignore-certificate-errors',
         '--ignore-certificate-errors-skip-list',
@@ -86,30 +86,30 @@ export class Scraper {
         // '--mute-audio',
       ]
     })
-  
+
     const page = await this.browser.newPage()
     this.page = page
 
     // page.on('response', async (response) => {
     //   const url = response.url()
-    
+
     //   if (response.request().resourceType() === 'image') {
     //     const file = await response.buffer()
     //     const fileName = url.split('/').pop()
-    
+
     //     if (!fileName) {
     //       console.log(`Esse link não há o nome da imagem: ${url}`)
     //       return
     //     }
     //     if(!fileName.endsWith('.png')) return
-        
+
     //     const filePath = resolve(__dirname, fileName)
     //     const writeStream = createWriteStream(filePath)
-    
+
     //     writeStream.write(file)
     //   }
     // })
-    
+
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
     await page.setCacheEnabled(true)
     await page.setExtraHTTPHeaders({
@@ -118,24 +118,26 @@ export class Scraper {
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => false })   // Remove a indicação de automação
       Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'en-US', 'en'] })  // Define idiomas comuns
-      Object.defineProperty(navigator, 'plugins', { get: () => [ { name: 'Chrome PDF Plugin' }, { name: 'Chrome PDF Viewer' }, { name: 'Native Client' } ] })
+      Object.defineProperty(navigator, 'plugins', { get: () => [{ name: 'Chrome PDF Plugin' }, { name: 'Chrome PDF Viewer' }, { name: 'Native Client' }] })
       Object.defineProperty(navigator, 'platform', { get: () => 'Win32' })  // Define o sistema operacional
     })
     await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 })
     await page.goto(this.url, { waitUntil: 'networkidle2' })
     this.disableNavigation()
-    
+
+    await this.savePageContent(page)
+
     return this
   }
 
-  private disableNavigation () {
+  private disableNavigation() {
     const page = this.page
     if (page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
-    
+
     page.on('request', (req) => {
       console.log(`Request: ${req.url()}`)
-  
+
       if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
         console.log('Abort')
         req.abort('aborted')
@@ -179,7 +181,7 @@ export class Scraper {
     return this
   }
 
-  async filter () {
+  async filter() {
     if (this.elements.length === 0) {
       await this.page?.close()
       throw new Error('Execute scan function firt')
@@ -187,9 +189,9 @@ export class Scraper {
     const filteredElements = []
 
     for (const element of this.elements) {
-      const textContent =  await element.evaluate(el => el?.textContent || '')
+      const textContent = await element.evaluate(el => el?.textContent || '')
       const foundKeywords = this.keywords.filter(keyword => textContent.includes(keyword))
-    
+
       if (foundKeywords.length > 0) filteredElements.push(element)
     }
 
@@ -197,7 +199,7 @@ export class Scraper {
     this.elements.push(...filteredElements)
   }
 
-  async getScreenshotInitPage(): Promise<Uint8Array<ArrayBufferLike>> {
+  async getScreenshotInitPage(): Promise<Uint8Array> {
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
     return await this.page.screenshot()
@@ -209,8 +211,8 @@ export class Scraper {
       throw new Error('variable elements is empty')
     }
     const evidences: Evidence[] = []
-  
-    for (const element of this.elements) {
+
+    for await (const element of this.elements) {
       if (element.asElement() === null) continue
       try {
         // 500 KB em bytes
@@ -218,7 +220,7 @@ export class Scraper {
         const image = await element.screenshot({ captureBeyondViewport: false })
 
         if (image.byteLength > sizeInBytes) continue
-  
+
         evidences.push(new Evidence({
           isHidden: await element.isHidden(),
           isIntersectingViewport: await element.isIntersectingViewport({ threshold: 1 }),
@@ -235,13 +237,13 @@ export class Scraper {
 
   async filterScreenshots(evidences: Evidence[]) {
     const filteredEvidences: Evidence[] = []
-    
+
     for (const evidence of evidences) {
       try {
         // Salva o buffer como arquivo temporário
         const tempImagePath = join(tmpdir(), `temp-image-${Date.now()}.png`)
         await writeFile(tempImagePath, evidence.print)
-  
+
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
 
@@ -255,7 +257,16 @@ export class Scraper {
         console.log(err)
       }
     }
-    
+
     return filteredEvidences
+  }
+
+  async savePageContent(page: Page) {
+    const content = await page.content()
+
+    // TODO: include a path to save the file, just like `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}` in BetQueue.ts
+    const evicencesPath = join('./someDirectory', `${this.url}-content-${Date.now()}.html`)
+
+    await writeFile(evicencesPath, content)
   }
 }

@@ -4,7 +4,6 @@ import { Authenticator } from '@fastify/passport'
 import { fastifyStatic } from '@fastify/static'
 import { fastifyWebsocket } from '@fastify/websocket'
 import fastify, { FastifyInstance } from 'fastify'
-// import fastifySecureSession from '@fastify/secure-session'
 import { fastifySession } from '@fastify/session'
 
 import { BearerStrategy } from '@/strategies/BearerStrategy.js'
@@ -32,9 +31,8 @@ export class Fastify {
 
     server
       .register(fastifyMultipart, {
-      // attachFieldsToBody: true,
         limits: {
-          fileSize: 1024 * 1024 * 10
+          fileSize: 1024 * 1024 * 10 // 10 Mb
         }
       })
       .register(fastifyStatic, {
@@ -49,7 +47,7 @@ export class Fastify {
         logLevel: 'debug',
         cookie: {
           path: '/',
-          maxAge: 60 * 60 * 24 * 7 
+          maxAge: 60 * 60 * 24 * 7 // 7 dias
         }
       })
       .register(fastifyPassport.initialize())

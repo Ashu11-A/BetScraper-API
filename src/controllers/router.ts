@@ -50,8 +50,6 @@ export class Router {
       }
 
       path = join('/', path)
-
-
       
       for (const method of router.options.method) {
 

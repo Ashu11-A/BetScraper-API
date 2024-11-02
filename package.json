@@ -50,7 +50,6 @@
     "dotenv": "^16.4.5",
     "fastify": "4.28.1",
     "glob": "11.0.0",
-    "jimp": "^1.6.0",
     "jsonwebtoken": "^9.0.2",
     "mysql": "^2.18.1",
     "nanoid": "^5.0.8",

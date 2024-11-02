@@ -1,11 +1,12 @@
-import { writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
-import { createWorker } from 'tesseract.js'
-import { Jimp } from 'jimp'
-import { Criteria } from '@/types/evidence-criteria.interface.js'
 import { advisementRulesKeywords, bonusKeywords, legalAgeAdvisementKeywords } from '@/shared/consts/keywords/index.js'
+import { Criteria } from '@/types/evidence-criteria.interface.js'
+import { existsSync } from 'fs'
+import { mkdir, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { dirname, join } from 'path'
+import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
+import sharp from 'sharp'
+import { createWorker } from 'tesseract.js'
 
 const woker = await createWorker('por', 2, { gzip: true })
 
@@ -15,20 +16,27 @@ class Evidence {
   isIntersectingViewport: boolean
   print: Uint8Array
   grayScalePrint: Buffer
+  gambleAdictAdvisement?: boolean = false
+  legalAgeAdvisement?: boolean = false
+  hasBonuses?: boolean = false
+  hasIrregularity?: boolean = false
 
-  constructor({ isHidden, isIntersectingViewport, isVisible, print, grayScalePrint }: Evidence) {
+  constructor({ isHidden, isIntersectingViewport, isVisible, print, grayScalePrint, gambleAdictAdvisement, hasBonuses, hasIrregularity, legalAgeAdvisement }: Evidence) {
     this.isHidden = isHidden
     this.isIntersectingViewport = isIntersectingViewport
     this.isVisible = isVisible
     this.print = print
     this.grayScalePrint = grayScalePrint
+    this.gambleAdictAdvisement = gambleAdictAdvisement
+    this.hasBonuses = hasBonuses
+    this.hasIrregularity = hasIrregularity
+    this.legalAgeAdvisement = legalAgeAdvisement
   }
 }
 
 export class Scraper {
   private page?: Page
   public elements: Array<ElementHandle<Element>> = []
-  // private __dirname = dirname(fileURLToPath(import.meta.url))
   public browser!: Browser
 
   constructor(public readonly url: string, public readonly keywords: string[]) { }
@@ -70,25 +78,6 @@ export class Scraper {
 
         //Fix Fallback WebGL
         '--enable-unsafe-swiftshader'
-
-        // '--disable-infobars',
-        // '--single-process',
-        // '--no-zygote',
-        // '--no-first-run',
-        // '--window-position=0,0',
-        // '--disable-dev-shm-usage',
-        // '--disable-notifications',
-        // '--disable-background-timer-throttling',
-        // '--disable-backgrounding-occluded-windows',
-        // '--disable-breakpad',
-        // '--disable-component-extensions-with-background-pages',
-        // '--disable-extensions',
-        // '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-        // '--disable-ipc-flooding-protection',
-        // '--disable-renderer-backgrounding',
-        // '--force-color-profile=srgb',
-        // '--metrics-recording-only',
-        // '--mute-audio',
       ]
     })
 
@@ -129,8 +118,6 @@ export class Scraper {
     await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 })
     await page.goto(this.url, { waitUntil: 'networkidle2' })
     this.disableNavigation()
-
-    await this.savePageContent(page)
 
     return this
   }
@@ -182,9 +169,7 @@ export class Scraper {
   async scan() {
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
-    // direct atribuition to save memo usage
     this.elements = await this.page.$$('*')
-
     return this
   }
 
@@ -206,7 +191,7 @@ export class Scraper {
     this.elements = filteredElements
   }
 
-  async getScreenshotInitPage(): Promise<Uint8Array> {
+  async getScreenshotHomePage(): Promise<Uint8Array> {
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
     return await this.page.screenshot()
@@ -245,13 +230,7 @@ export class Scraper {
   }
 
   async convertToGrayscale(image: Uint8Array): Promise<Buffer> {
-    const jimpImage = await Jimp.read(image)
-
-    jimpImage.greyscale()
-
-    const buff = jimpImage.getBuffer('image/png')
-
-    return buff
+    return sharp(image).greyscale().png().toBuffer()
   }
 
   async filterScreenshots(evidences: Evidence[]) {
@@ -265,13 +244,14 @@ export class Scraper {
 
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
-
         const imgText = data.text
-
         const criterias = await this.filterBasedOnCriterias(imgText)
 
         if (criterias.hasIrregularity) {
-          filteredEvidences.push(evidence)
+          filteredEvidences.push({
+            ...evidence,
+            ...criterias
+          })
         }
 
         console.log('OCR:', data.text)
@@ -285,6 +265,7 @@ export class Scraper {
   }
 
   async filterBasedOnCriterias(text: string) {
+    text = text.toLowerCase()
     const reason: Criteria = {
       gambleAdictAdvisement: false,
       legalAgeAdvisement: false,
@@ -292,17 +273,17 @@ export class Scraper {
       hasIrregularity: false
     }
 
-    if (legalAgeAdvisementKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+    if (legalAgeAdvisementKeywords.some(keyword => text.includes(keyword.toLowerCase()))) {
       reason.legalAgeAdvisement = true
       reason.hasIrregularity = true
     }
 
-    if (advisementRulesKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+    if (advisementRulesKeywords.some(keyword => text.includes(keyword.toLowerCase()))) {
       reason.gambleAdictAdvisement = true
       reason.hasIrregularity = true
     }
 
-    if (bonusKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+    if (bonusKeywords.some(keyword => text.includes(keyword.toLowerCase()))) {
       reason.hasBonuses = true
       reason.hasIrregularity = true
     }
@@ -310,13 +291,13 @@ export class Scraper {
     return reason
   }
 
-  async savePageContent(page: Page) {
-    const content = await page.content()
+  async savePageContent(path: string) {
+    if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
-    // TODO: include a path to save the file, just like `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}` in BetQueue.ts
-    const evicencesPath = join('./someDirectory', `${this.url}-content-${Date.now()}.html`)
-
-    await writeFile(evicencesPath, content)
+    const content = await this.page.content()
+    const filename = 'page.html'
+  
+    if (!existsSync(dirname(path))) await mkdir(dirname(path))
+    await writeFile(join(path, filename), content)
   }
-
 }

@@ -37,38 +37,36 @@ export class BetQueue {
   }
 }
 BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
+  const saveDir = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
+  await mkdir(saveDir, { recursive: true })
   try {
     console.log(`Starting Job ID: ${job.id}`)
 
     const scraper = new Scraper(job.data.task.bet.url, [...bonusKeywords, ...legalAgeAdvisementKeywords, ...advisementRulesKeywords])
     await scraper.loadPage()
-
-    const initImage = await scraper.getScreenshotInitPage()
-    await writeFile('initial.png', initImage)
-
+    await scraper.savePageContent(saveDir)
+    const initImage = await scraper.getScreenshotHomePage()
     await scraper.closePopUp()
     await scraper.scan()
     await scraper.filter()
+    const screenshots = await scraper.getScreenshots()
+    const filteredScreenshots = await scraper.filterScreenshots(screenshots)
 
-    const evidences = await scraper.getScreenshots()
-    const filteredEvidences = await scraper.filterScreenshots(evidences)
-
+    await writeFile(join(saveDir, '/initial.png'), initImage)
+    for (const [number, evidence] of Object.entries(filteredScreenshots)) {
+      await writeFile(join(saveDir, `/${number}.png`), evidence.print)
+    }
+    
     await scraper.browser.close()
 
-    const dirToSave = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
-    await mkdir(dirToSave, { recursive: true })
-
-    for (const [number, evidence] of Object.entries(filteredEvidences)) {
-      await writeFile(join(dirToSave, `/${number}.png`), evidence.print)
-    }
-
-    const jsonData = filteredEvidences.map((evidence, index) => ({
+    const jsonData = filteredScreenshots.map((evidence, index) => ({
       ...evidence,
       print: undefined,
-      path: join(dirToSave, `/${index}.png`),
+      grayScalePrint: undefined,
+      path: join(process.cwd(), `/${index}.png`),
       pathName: `${index}.png`
     }))
-    await writeFile(join(dirToSave, '/metadata.json'), JSON.stringify(jsonData, null, 2))
+    await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
 
     done(null)
   } catch (error) {

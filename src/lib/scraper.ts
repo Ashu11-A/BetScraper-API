@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
 import { createWorker } from 'tesseract.js'
+import { Jimp } from 'jimp'
 
 const woker = await createWorker('por', 2, { gzip: true })
 
@@ -11,18 +12,20 @@ class Evidence {
   isHidden: boolean
   isIntersectingViewport: boolean
   print: Uint8Array
+  grayScalePrint: Buffer
 
-  constructor({ isHidden, isIntersectingViewport, isVisible, print }: Evidence) {
+  constructor({ isHidden, isIntersectingViewport, isVisible, print, grayScalePrint }: Evidence) {
     this.isHidden = isHidden
     this.isIntersectingViewport = isIntersectingViewport
     this.isVisible = isVisible
     this.print = print
+    this.grayScalePrint = grayScalePrint
   }
 }
 
 export class Scraper {
   private page?: Page
-  public readonly elements: Array<ElementHandle<Element>> = []
+  public elements: Array<ElementHandle<Element>> = []
   // private __dirname = dirname(fileURLToPath(import.meta.url))
   public browser!: Browser
 
@@ -176,8 +179,10 @@ export class Scraper {
 
   async scan() {
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
-    const elements = await this.page.$$('*')
-    this.elements.push(...elements)
+
+    // direct atribuition to save memo usage
+    this.elements = await this.page.$$('*')
+
     return this
   }
 
@@ -186,6 +191,7 @@ export class Scraper {
       await this.page?.close()
       throw new Error('Execute scan function firt')
     }
+
     const filteredElements = []
 
     for (const element of this.elements) {
@@ -195,8 +201,7 @@ export class Scraper {
       if (foundKeywords.length > 0) filteredElements.push(element)
     }
 
-    this.elements.length = 0
-    this.elements.push(...filteredElements)
+    this.elements = filteredElements
   }
 
   async getScreenshotInitPage(): Promise<Uint8Array> {
@@ -219,13 +224,15 @@ export class Scraper {
         const sizeInBytes = 500 * 1024
         const image = await element.screenshot({ captureBeyondViewport: false })
 
+        // verify this if
         if (image.byteLength > sizeInBytes) continue
 
         evidences.push(new Evidence({
           isHidden: await element.isHidden(),
           isIntersectingViewport: await element.isIntersectingViewport({ threshold: 1 }),
           isVisible: await element.isVisible(),
-          print: image
+          print: image,
+          grayScalePrint: await this.convertToGrayscale(image),
         }))
       } catch (err) {
         console.log(err)
@@ -235,6 +242,16 @@ export class Scraper {
     return evidences
   }
 
+  async convertToGrayscale(image: Uint8Array): Promise<Buffer> {
+    const jimpImage = await Jimp.read(image)
+
+    jimpImage.greyscale()
+
+    const buff = jimpImage.getBuffer('image/png')
+
+    return buff
+  }
+
   async filterScreenshots(evidences: Evidence[]) {
     const filteredEvidences: Evidence[] = []
 
@@ -242,7 +259,7 @@ export class Scraper {
       try {
         // Salva o buffer como arquivo temporário
         const tempImagePath = join(tmpdir(), `temp-image-${Date.now()}.png`)
-        await writeFile(tempImagePath, evidence.print)
+        await writeFile(tempImagePath, evidence.grayScalePrint)
 
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
@@ -251,6 +268,7 @@ export class Scraper {
         if (this.keywords.filter(keyword => data.text.includes(keyword)).length > 0) {
           filteredEvidences.push(evidence)
         }
+
         console.log('OCR:', data.text)
         console.log(this.keywords.filter(keyword => data.text.includes(keyword)).length)
       } catch (err) {
@@ -269,4 +287,5 @@ export class Scraper {
 
     await writeFile(evicencesPath, content)
   }
+
 }

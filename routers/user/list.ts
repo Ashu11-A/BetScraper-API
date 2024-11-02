@@ -13,9 +13,9 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = paginateSchema.safeParse(request.query)
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
-        const { interval, page, pageSize, day } = parsed.data
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
+        const { interval, page, pageSize, day } = parsed.data
         const paginated = (await paginate({
           repository: userRepository,
           interval,
@@ -28,7 +28,10 @@ export default new Router({
           ...paginated,
           data: paginated.data.map((user) => ({ ...user, password: undefined }))
         }
-        return reply.send(JSON.stringify(data))
+        return reply.code(200).send({
+          message: 'Request realizado com sucesso',
+          data
+        })
       },
     }
   ]

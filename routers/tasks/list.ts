@@ -17,9 +17,9 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.query)
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
-        const { interval, page, pageSize, day, betId } = parsed.data
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
+        const { interval, page, pageSize, day, betId } = parsed.data
         const tasks = await paginate({
           repository: tasksRepository, 
           interval,
@@ -29,7 +29,7 @@ export default new Router({
           bet: betId !== undefined ? { id: betId } : undefined,
         })
 
-        return reply.send(JSON.stringify(tasks))
+        return reply.code(200).send(tasks)
       },
     }
   ]

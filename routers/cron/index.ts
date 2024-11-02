@@ -3,6 +3,8 @@ import { Cron } from '@/database/entity/Cron.js'
 import { MethodType } from '@/types/router.js'
 import { z } from 'zod'
 import { parseExpression } from 'cron-parser'
+import { paginate, paginateSchema } from '@/database/pagination.js'
+import { cronRepository } from '@/database/index.js'
 
 const createSchema = z.object({
   expression: z.string().refine((value) => {
@@ -33,14 +35,23 @@ const updateSchema = z.object({
 export default new Router({
   name: 'Cron',
   description: 'Cron Manager',
-  path: '/cron',
   method: [
     {
       type: MethodType.Get,
       authenticate: ['bearer'],
-      async run(_request, reply) {
-        const crons = await Cron.find()
-        return reply.send(JSON.stringify(crons))
+      async run(request, reply) {
+        const parsed = paginateSchema.safeParse(request.query)
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const { page, pageSize, interval, day } = parsed.data
+
+        const crons = await paginate({
+          repository: cronRepository,
+          interval,
+          page,
+          pageSize,
+          day
+        })
+        return reply.code(200).send(crons)
       }
     },
     {
@@ -48,11 +59,13 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = createSchema.safeParse(request.body)
-
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
         
         const cron = await Cron.create({ ...parsed.data }).save()
-        return reply.status(201).send(cron)
+        return reply.code(201).send({ 
+          message: 'Cron criado com sucesso!',
+          data: cron
+        })
       }
     },
     {
@@ -60,12 +73,15 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = await updateSchema.safeParseAsync(request.body)
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
         const cron = await Cron.update({ id: parsed.data.id }, {
           ...parsed.data
         })
-        return reply.status(200).send(JSON.stringify(cron))
+        return reply.code(200).send({
+          message: 'Cron editado com sucesso!',
+          data: cron
+        })
       }
     },
     {
@@ -73,10 +89,13 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = await deleteSchema.safeParseAsync(request.body)
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
         
         const result = await Cron.delete({ id: parsed.data.id })
-        return reply.send(JSON.stringify(result))
+        return reply.code(200).send({
+          message: 'Cron deletado com sucesso!',
+          data: result
+        })
       }
     }
   ]

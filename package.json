@@ -6,6 +6,7 @@
   "private": "true",
   "scripts": {
     "dev": "bun --watch src/app.ts",
+    "lint": "eslint -c eslint.config.mjs",
     "typeorm": "typeorm-ts-node-esm -d ./src/database/dataSource.ts",
     "schema:sync": "bun run typeorm -- schema:sync",
     "typeorm:cache": "bun run typeorm -- cache:clear",

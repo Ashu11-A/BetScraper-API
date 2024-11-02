@@ -18,10 +18,7 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-
-        if (!parsed.success) {
-          return reply.status(404).send(JSON.stringify(parsed.error))
-        }
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
         
         const bets = await Bet.find({
           where: [
@@ -30,7 +27,10 @@ export default new Router({
           ]
         })
 
-        return reply.send(JSON.stringify(bets))
+        return reply.code(200).send({
+          message: 'Request realizado com sucesso!',
+          data: bets
+        })
       },
     }
   ]

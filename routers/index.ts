@@ -11,7 +11,9 @@ export default new Router({
       async run(request, reply) {
 
         console.log(request.user)
-        return reply.send('Hello World')
+        return reply.code(200).send({
+          message: 'Hello World'
+        })
       },
     }
   ]

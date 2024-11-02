@@ -15,13 +15,6 @@ const schema = z.object({
   path: ['betId', 'cronId']
 })
 
-const Error = {
-  validationError: (error: z.ZodError<z.infer<typeof schema>>) => ({ status: 400, message: JSON.stringify(error) }),
-  betNotFound: { status: 404, message: 'Bet não encontrado.' },
-  userNotFound: { status: 404, message: 'User não encontrado.' },
-  cronNotFound: { status: 404, message: 'Cron não encontrado.' }
-}
-
 export default new Router({
   name: 'Scraping',
   description: 'Adiciona uma tarefa de scraping à fila',
@@ -31,20 +24,18 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) {
-          return reply.status(Error['validationError'](parsed.error).status).send(Error['validationError'](parsed.error).message)
-        }
-        const { userId, betId, cronId } = parsed.data
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
+        const { userId, betId, cronId } = parsed.data
         const [bet, user, cron] = await Promise.all([
           betId ? Bet.findOneBy({ id: betId }) : Promise.resolve(null),
           User.findOneBy({ id: userId }),
           cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
         ])
 
-        if (!bet) return reply.status(Error['betNotFound'].status).send(Error['betNotFound'].message)
-        if (!user) return reply.status(Error['userNotFound'].status).send(Error['userNotFound'].message)
-        if (!cron && cronId) return reply.status(Error['cronNotFound'].status).send(Error['cronNotFound'].message)
+        if (!bet) return reply.code(404).send({ message: 'Bet não encontrado.' })
+        if (!user) return reply.code(404).send({ message: 'User não encontrado.' })
+        if (!cron && cronId) return reply.code(404).send({ message: 'Cron não encontrado.' })
 
         const queue = await BetQueue.addToQueue({
           user,
@@ -52,7 +43,7 @@ export default new Router({
           cron: cron === null ? undefined : cron
         })
 
-        return reply.send(JSON.stringify(queue))
+        return reply.code(200).send({ message: 'Ação adicionada com sucesso a fila!', data: queue })
       }
     }
   ]

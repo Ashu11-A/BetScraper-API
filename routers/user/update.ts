@@ -20,11 +20,11 @@ export default new Router({
       async run(request, reply) {
         const userId = request.user!.id
         const parsed = schema.safeParse(request.body)
-      
-        if (!parsed.success) return reply.send(JSON.stringify(parsed.error)).status(422)
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+
         await User.update({ id: userId }, { ...parsed.data })
       
-        return reply.status(200).send(JSON.stringify({ message: 'User successfully updated' }))
+        return reply.code(200).send({ message: 'User successfully updated' })
       },
     }
   ]

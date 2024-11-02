@@ -24,7 +24,7 @@ export default new Router({
       type: MethodType.Post,
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.send(JSON.stringify(parsed.error))
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
         const existUser = await User.findOne({
           where: [
@@ -32,9 +32,9 @@ export default new Router({
             { email: parsed.data.email }
           ]
         })
-        if (existUser) {
-          return reply.send(new Error('Email or username already in use'))
-        }
+        if (existUser) return reply.code(422).send({
+          message: 'Email or username already in use'
+        })
 
         const password = await hash(parsed.data.password, saltRounds)
         const user = await User.create({
@@ -42,7 +42,10 @@ export default new Router({
           password
         }).save()
 
-        return reply.send(JSON.stringify(user))
+        return reply.code(200).send({
+          message: 'Usuário registrado com sucesso!',
+          data: user
+        })
       }
     }
   ]

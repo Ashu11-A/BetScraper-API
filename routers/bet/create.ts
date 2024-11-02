@@ -17,17 +17,14 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.status(500).send(JSON.stringify(parsed.error))
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
-        const exist = await Bet.findOne({
-          where: [
-            { name: parsed.data.name },
-            { url: parsed.data.url }
-          ]
-        })
+        const exist = await Bet.findOneBy({ url: parsed.data.url })
 
         if (exist !== null) {
-          return reply.status(422).send(new Error('Name or URL already registered in the database'))
+          return reply.code(422).send({
+            message: 'Name or URL already registered in the database'
+          })
         }
 
         const bet = Bet.create({
@@ -37,7 +34,10 @@ export default new Router({
         })
         await bet.save()
 
-        return reply.send(JSON.stringify(bet))
+        return reply.code(200).send({
+          message: 'Bet criado com sucesso!',
+          data: bet
+        })
       }
     }
   ]

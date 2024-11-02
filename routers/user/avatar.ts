@@ -17,7 +17,7 @@ export default new Router({
         const path = join(storageImagePath, `${request.user!.uuid}.png`)
 
         if (!existsSync(path)) {
-          return reply.status(404).send({ error: 'Arquivo não encontrado' })
+          return reply.code(404).send({ message: 'Arquivo não encontrado'  })
         }
 
         return reply.sendFile(path)
@@ -29,7 +29,7 @@ export default new Router({
       async run(request, reply) {
         const userUUID = request.user!.uuid
         const data = await request.file()
-        if (!data) return reply.status(422).send({ error: 'Arquivo não encontrado' })
+        if (!data) return reply.code(422).send({ message: 'Arquivo não encontrado' })
 
         // Criação do diretório caso não exista
         await mkdir(storageImagePath, { recursive: true })
@@ -42,7 +42,7 @@ export default new Router({
           .png({ compressionLevel: 9 })
           .toFile(path)
 
-        return reply.send({ success: true })
+        return reply.code(200).send({ message: 'Avatar salvo com sucesso!', toastMessage: 'Seu avatar foi salvo!' })
       },
     }
   ]

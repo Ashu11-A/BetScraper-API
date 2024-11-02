@@ -43,7 +43,7 @@ export class BearerStrategy extends Strategy {
         return this.fail(null, 403)
       }
 
-      const { id, uuid } = userData as { id: number; uuid: string }
+      const { id, uuid } = userData as { id: number, uuid: string }
       if (!id || !uuid) {
         console.log('Token com informações incompletas')
         return this.fail(null, 403)

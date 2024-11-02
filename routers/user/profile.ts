@@ -19,7 +19,10 @@ export default new Router({
           language: true
         } })
 
-        return reply.send(JSON.stringify(user))
+        return reply.code(200).send({
+          message: 'Request realizado com sucesso!',
+          data: user
+        })
       }
     }
   ]

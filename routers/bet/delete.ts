@@ -16,15 +16,13 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) {
-          return reply.status(500).send(JSON.stringify(parsed.error))
-        }
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
 
         const exist = await Bet.findOneBy({ id: parsed.data.id })
-        if (exist === null) return reply.status(404).send(new Error('Bet not found'))
+        if (exist === null) return reply.code(404).send({ message: 'Bet not found' })
 
         await exist.remove()
-        return reply.status(200).send(JSON.stringify({ message: 'Successfully removed' }))
+        return reply.code(200).send({ message: 'Successfully removed' })
       }
     }
   ]

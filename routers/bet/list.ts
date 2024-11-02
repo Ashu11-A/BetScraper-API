@@ -14,7 +14,7 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = paginateSchema.safeParse(request.query)
-        if (!parsed.success) return reply.status(422).send(JSON.stringify(parsed.error))
+        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
         const { page, pageSize, interval, day } = parsed.data
 
         try {
@@ -26,11 +26,10 @@ export default new Router({
             day
           })
 
-          return reply.send(JSON.stringify(bets))
+          return reply.code(200).send(bets)
         } catch (error) {
           console.error('Error fetching bets:', error)
-          return reply.status(500).send({
-            error: 'Internal Server Error',
+          return reply.code(500).send({
             message: 'Failed to fetch bets',
           })
         }

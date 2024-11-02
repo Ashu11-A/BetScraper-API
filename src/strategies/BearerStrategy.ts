@@ -9,35 +9,37 @@ export class BearerStrategy extends Strategy {
   }
 
   async authenticate(request: FastifyRequest) {
-    if (!request.passport) {
-      console.error('passport.initialize() plugin não está em uso')
-      return this.error(new Error('Erro interno no servidor'))
-    }
-
-    const secret = process.env.JWT_TOKEN
-    if (!secret) {
-      throw new Error('A chave JWT_TOKEN não está definida nas variáveis de ambiente')
-    }
-
-    const cookie = request.cookies['Bearer']
-    if (!cookie) {
-      console.log('Token de autenticação ausente')
-      return this.fail(null, 403)
-    }
-
-    const { valid, value: token } = request.unsignCookie(cookie)
-    if (token === null) {
-      console.log('Token vazio!')
-      return this.fail(null, 403)
-    }
-
-    if (!valid) {
-      console.log('Token inválido!')
-      return this.fail(null, 403)
-    }
-
     try {
-      const userData = jwt.verify(token, secret)
+      if (!request.passport) {
+        console.error('passport.initialize() plugin não está em uso')
+        return this.error(new Error('Erro interno no servidor'))
+      }
+
+      const secret = process.env.JWT_TOKEN
+      if (!secret) {
+        throw new Error('A chave JWT_TOKEN não está definida nas variáveis de ambiente')
+      }
+
+      const cookie = request.cookies['Bearer']
+      if (!cookie) {
+        console.log('Token de autenticação ausente')
+        return this.fail(null, 403)
+      }
+
+      // Caso o token seja criptografado tambem, mas esse não é o caso para agora
+      // const { valid, value: token } = request.unsignCookie(cookie)
+      // console.log(token)
+      // if (token === null) {
+      //   console.log('Token vazio!')
+      //   return this.fail(null, 403)
+      // }
+
+      // if (!valid) {
+      //   console.log('Token inválido!')
+      //   return this.fail(null, 403)
+      // }
+
+      const userData = jwt.verify(cookie, secret)
       if (typeof userData !== 'object' || !userData) {
         console.log('Formato de token inválido')
         return this.fail(null, 403)

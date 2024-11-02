@@ -41,7 +41,6 @@ export default new Router({
 
         reply.setCookie('Bearer', token, {
           path: '/',
-          signed: true,
           httpOnly: true,
           domain: process.env['PRODUCTION'] === 'true' ?  process.env['FRONT_END_URL'] : undefined
         })

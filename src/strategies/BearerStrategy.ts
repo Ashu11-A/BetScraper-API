@@ -10,46 +10,63 @@ export class BearerStrategy extends Strategy {
 
   async authenticate(request: FastifyRequest) {
     if (!request.passport) {
-      return this.error(new Error('passport.initialize() plugin não está em uso'))
+      console.error('passport.initialize() plugin não está em uso')
+      return this.error(new Error('Erro interno no servidor'))
     }
 
-    const token = request.cookies['Bearer']
-    if (!token) {
-      return this.fail('Token de autenticação ausente', 403)
+    const secret = process.env.JWT_TOKEN
+    if (!secret) {
+      throw new Error('A chave JWT_TOKEN não está definida nas variáveis de ambiente')
+    }
+
+    const cookie = request.cookies['Bearer']
+    if (!cookie) {
+      console.log('Token de autenticação ausente')
+      return this.fail(null, 403)
+    }
+
+    const { valid, value: token } = request.unsignCookie(cookie)
+    if (token === null) {
+      console.log('Token vazio!')
+      return this.fail(null, 403)
+    }
+
+    if (!valid) {
+      console.log('Token inválido!')
+      return this.fail(null, 403)
     }
 
     try {
-      const secret = process.env.JWT_TOKEN
-      if (!secret) {
-        throw new Error('A chave JWT_TOKEN não está definida nas variáveis de ambiente')
-      }
-
       const userData = jwt.verify(token, secret)
       if (typeof userData !== 'object' || !userData) {
-        return this.fail('Formato de token inválido', 403)
+        console.log('Formato de token inválido')
+        return this.fail(null, 403)
       }
 
-      const { id, uuid } = userData as { id: number, uuid: string }
+      const { id, uuid } = userData as { id: number; uuid: string }
       if (!id || !uuid) {
-        return this.fail('Token com informações incompletas', 403)
+        console.log('Token com informações incompletas')
+        return this.fail(null, 403)
       }
 
       const user = await User.findOneBy({ id, uuid })
-      if (!user) return this.fail('Usuário não encontrado', 404)
+      if (!user) {
+        console.log('Usuário não encontrado')
+        return this.fail(null, 404)
+      }
 
       this.success(user)
     } catch (err) {
-      switch(true) {
-      case err instanceof jwt.JsonWebTokenError: {
-        return this.fail('Token JWT inválido ou expirado', 401)
-      }
-      case (err instanceof jwt.TokenExpiredError): {
-        return this.fail('Token JWT expirado', 401)
-      }
-      case (err instanceof jwt.NotBeforeError): {
-        return this.fail('Token JWT não é válido ainda', 401)
-      }
-      default:
+      if (err instanceof jwt.JsonWebTokenError) {
+        console.log('Token JWT inválido ou expirado')
+        return this.fail(null, 401)
+      } else if (err instanceof jwt.TokenExpiredError) {
+        console.log('Token JWT expirado')
+        return this.fail(null, 401)
+      } else if (err instanceof jwt.NotBeforeError) {
+        console.log('Token JWT não é válido ainda')
+        return this.fail(null, 401)
+      } else {
         console.error('Erro durante a autenticação:', err)
         return this.error(new Error('Erro interno no servidor'))
       }

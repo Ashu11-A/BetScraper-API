@@ -1,16 +1,16 @@
+import { fastifyCookie } from '@fastify/cookie'
+import { fastifyMultipart } from '@fastify/multipart'
+import { Authenticator } from '@fastify/passport'
+import { fastifyStatic } from '@fastify/static'
+import { fastifyWebsocket } from '@fastify/websocket'
+import fastify, { FastifyInstance } from 'fastify'
+// import fastifySecureSession from '@fastify/secure-session'
+import { fastifySession } from '@fastify/session'
+
+import { BearerStrategy } from '@/strategies/BearerStrategy.js'
+
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
-import { BearerStrategy } from '@/strategies/BearerStrategy.js'
-import cookie from '@fastify/cookie'
-import fastifyMultipart from '@fastify/multipart'
-import { Authenticator } from '@fastify/passport'
-import SecureSession from '@fastify/secure-session'
-import fastifyStatic from '@fastify/static'
-import websocket from '@fastify/websocket'
-import { execSync } from 'child_process'
-import fastify, { FastifyInstance } from 'fastify'
-import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
 
 export const fastifyPassport = new Authenticator()
 
@@ -25,16 +25,12 @@ export class Fastify {
 
   init () {
     const server = fastify({ logger: true })
+    const cookieToken = process.env['COOKIE_TOKEN']
+    const sessionToken = process.env['SESSION_TOKEN']
 
-    if (!existsSync(join(process.cwd(), 'secret-key'))) {
-      console.log('🔑 secret-key not found, generating with the command “npx @fastify/secure-session > secret-key”')
-      execSync('npx @fastify/secure-session > secret-key', { stdio: 'inherit' })
-    }
+    if (cookieToken === undefined || sessionToken === undefined) throw new Error('Session token or cookie token are undefined')
 
     server
-      .register(cookie, {
-        secret: process.env['COOKIE_TOKEN']
-      })
       .register(fastifyMultipart, {
       // attachFieldsToBody: true,
         limits: {
@@ -44,10 +40,19 @@ export class Fastify {
       .register(fastifyStatic, {
         root: storagePath,
       })
-      .register(websocket)
-      .register(SecureSession, { key: readFileSync(join(process.cwd(), 'secret-key')) })
+      .register(fastifyWebsocket)
+      .register(fastifyCookie, {
+        secret: cookieToken
+      })
+      .register(fastifySession, {
+        secret: sessionToken,
+        logLevel: 'debug',
+        cookie: {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 7 
+        }
+      })
       .register(fastifyPassport.initialize())
-      .register(fastifyPassport.secureSession())
     
     fastifyPassport.registerUserSerializer<User, string>(async (user) => {
       console.log('registerUserSerializer', user)

@@ -5,6 +5,7 @@ import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
 import { Scraper } from '@/lib/scraper.js'
+import { advisementRulesKeywords, bonusKeywords, legalAgeAdvisementKeywords } from '@/shared/consts/keywords/index.js'
 import { Job } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -17,12 +18,6 @@ type AddBetQueue = {
 type BetQueueType = {
   task: Task
 }
-
-const keywords = [
-  'créditos', 'bônus', 'crédito', 'bônu',
-  'incentivo', 'gratificação',
-  'bonificação', 'abono', 'saldo extra',
-]
 
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
@@ -42,38 +37,36 @@ export class BetQueue {
   }
 }
 BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
+  const saveDir = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
+  await mkdir(saveDir, { recursive: true })
   try {
     console.log(`Starting Job ID: ${job.id}`)
 
-    const scraper = new Scraper(job.data.task.bet.url, keywords)
+    const scraper = new Scraper(job.data.task.bet.url, [...bonusKeywords, ...legalAgeAdvisementKeywords, ...advisementRulesKeywords])
     await scraper.loadPage()
-
-    const initImage = await scraper.getScreenshotInitPage()
-    await writeFile('initial.png', initImage)
-
+    await scraper.savePageContent(saveDir)
+    const initImage = await scraper.getScreenshotHomePage()
     await scraper.closePopUp()
     await scraper.scan()
     await scraper.filter()
+    const screenshots = await scraper.getScreenshots()
+    const filteredScreenshots = await scraper.filterScreenshots(screenshots)
 
-    const evidences = await scraper.getScreenshots()
-    const filteredEvidences = await scraper.filterScreenshots(evidences)
-  
-    await scraper.browser.close()
-    
-    const dirToSave = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
-    await mkdir(dirToSave, { recursive: true })
-  
-    for (const [number, evidence] of Object.entries(filteredEvidences)) {
-      await writeFile(join(dirToSave, `/${number}.png`), evidence.print)
+    await writeFile(join(saveDir, '/initial.png'), initImage)
+    for (const [number, evidence] of Object.entries(filteredScreenshots)) {
+      await writeFile(join(saveDir, `/${number}.png`), evidence.print)
     }
+    
+    await scraper.browser.close()
 
-    const jsonData = filteredEvidences.map((evidence, index) => ({
+    const jsonData = filteredScreenshots.map((evidence, index) => ({
       ...evidence,
       print: undefined,
-      path: join(dirToSave, `/${index}.png`),
+      grayScalePrint: undefined,
+      path: join(process.cwd(), `/${index}.png`),
       pathName: `${index}.png`
     }))
-    await writeFile(join(dirToSave, '/metadata.json'), JSON.stringify(jsonData, null, 2))
+    await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
 
     done(null)
   } catch (error) {
@@ -85,7 +78,7 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
 BetQueue.queue.on('completed', async (job: Job<BetQueueType>) => {
   console.error(`Job ID ${job.id} completado.`)
   const task = await Task.findOneByOrFail({ id: job.data.task.id })
-  
+
   await Task.update({ id: job.data.task.id }, {
     status: 'completed',
     finishedAt: new Date(),

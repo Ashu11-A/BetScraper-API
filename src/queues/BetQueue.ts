@@ -5,7 +5,7 @@ import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
 import { Scraper } from '@/lib/scraper.js'
-import { bonusKeywords } from '@/shared/consts/keywords/bonuses.js'
+import { advisementRulesKeywords, bonusKeywords, legalAgeAdvisementKeywords } from '@/shared/consts/keywords/index.js'
 import { Job } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -40,7 +40,7 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
   try {
     console.log(`Starting Job ID: ${job.id}`)
 
-    const scraper = new Scraper(job.data.task.bet.url, bonusKeywords)
+    const scraper = new Scraper(job.data.task.bet.url, [...bonusKeywords, ...legalAgeAdvisementKeywords, ...advisementRulesKeywords])
     await scraper.loadPage()
 
     const initImage = await scraper.getScreenshotInitPage()
@@ -52,12 +52,12 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
 
     const evidences = await scraper.getScreenshots()
     const filteredEvidences = await scraper.filterScreenshots(evidences)
-  
+
     await scraper.browser.close()
-    
+
     const dirToSave = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
     await mkdir(dirToSave, { recursive: true })
-  
+
     for (const [number, evidence] of Object.entries(filteredEvidences)) {
       await writeFile(join(dirToSave, `/${number}.png`), evidence.print)
     }
@@ -80,7 +80,7 @@ BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
 BetQueue.queue.on('completed', async (job: Job<BetQueueType>) => {
   console.error(`Job ID ${job.id} completado.`)
   const task = await Task.findOneByOrFail({ id: job.data.task.id })
-  
+
   await Task.update({ id: job.data.task.id }, {
     status: 'completed',
     finishedAt: new Date(),

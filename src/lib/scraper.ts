@@ -4,6 +4,8 @@ import { join } from 'path'
 import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
 import { createWorker } from 'tesseract.js'
 import { Jimp } from 'jimp'
+import { Criteria } from '@/types/evidence-criteria.interface.js'
+import { advisementRulesKeywords, bonusKeywords, legalAgeAdvisementKeywords } from '@/shared/consts/keywords/index.js'
 
 const woker = await createWorker('por', 2, { gzip: true })
 
@@ -264,8 +266,11 @@ export class Scraper {
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
 
-        // Filtra as imagens conforme as palavras-chave
-        if (this.keywords.filter(keyword => data.text.includes(keyword)).length > 0) {
+        const imgText = data.text
+
+        const criterias = await this.filterBasedOnCriterias(imgText)
+
+        if (criterias.hasIrregularity) {
           filteredEvidences.push(evidence)
         }
 
@@ -277,6 +282,32 @@ export class Scraper {
     }
 
     return filteredEvidences
+  }
+
+  async filterBasedOnCriterias(text: string) {
+    const reason: Criteria = {
+      gambleAdictAdvisement: false,
+      legalAgeAdvisement: false,
+      hasBonuses: false,
+      hasIrregularity: false
+    }
+
+    if (legalAgeAdvisementKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+      reason.legalAgeAdvisement = true
+      reason.hasIrregularity = true
+    }
+
+    if (advisementRulesKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+      reason.gambleAdictAdvisement = true
+      reason.hasIrregularity = true
+    }
+
+    if (bonusKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()))) {
+      reason.hasBonuses = true
+      reason.hasIrregularity = true
+    }
+
+    return reason
   }
 
   async savePageContent(page: Page) {

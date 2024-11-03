@@ -11,33 +11,27 @@ import { createWorker } from 'tesseract.js'
 const woker = await createWorker('por', 2, { gzip: true })
 
 class Evidence {
-  isVisible: boolean
-  isHidden: boolean
-  isIntersectingViewport: boolean
+  properties: {
+    isVisible: boolean
+    isHidden: boolean
+    isIntersectingViewport: boolean
+  }
+  evidences?: Criteria
   print: Uint8Array
   grayScalePrint: Buffer
-  gambleAdictAdvisement?: boolean = false
-  legalAgeAdvisement?: boolean = false
-  hasBonuses?: boolean = false
-  hasIrregularity?: boolean = false
 
-  constructor({ isHidden, isIntersectingViewport, isVisible, print, grayScalePrint, gambleAdictAdvisement, hasBonuses, hasIrregularity, legalAgeAdvisement }: Evidence) {
-    this.isHidden = isHidden
-    this.isIntersectingViewport = isIntersectingViewport
-    this.isVisible = isVisible
+  constructor({ properties, print, grayScalePrint, evidences }: Evidence) {
+    this.properties = properties
+    this.evidences = evidences
     this.print = print
     this.grayScalePrint = grayScalePrint
-    this.gambleAdictAdvisement = gambleAdictAdvisement
-    this.hasBonuses = hasBonuses
-    this.hasIrregularity = hasIrregularity
-    this.legalAgeAdvisement = legalAgeAdvisement
   }
 }
 
 export class Scraper {
   private page?: Page
-  public elements: Array<ElementHandle<Element>> = []
   public browser!: Browser
+  public elements: Array<ElementHandle<Element>> = []
 
   constructor(public readonly url: string, public readonly keywords: string[]) { }
 
@@ -210,16 +204,16 @@ export class Scraper {
         // 500 KB em bytes
         const sizeInBytes = 500 * 1024
         const image = await element.screenshot({ captureBeyondViewport: false })
-
-        // verify this if
         if (image.byteLength > sizeInBytes) continue
 
         evidences.push(new Evidence({
-          isHidden: await element.isHidden(),
-          isIntersectingViewport: await element.isIntersectingViewport({ threshold: 1 }),
-          isVisible: await element.isVisible(),
           print: image,
           grayScalePrint: await this.convertToGrayscale(image),
+          properties: {
+            isHidden: await element.isHidden(),
+            isIntersectingViewport: await element.isIntersectingViewport({ threshold: 1 }),
+            isVisible: await element.isVisible(),
+          }
         }))
       } catch (err) {
         console.log(err)
@@ -230,7 +224,7 @@ export class Scraper {
   }
 
   async convertToGrayscale(image: Uint8Array): Promise<Buffer> {
-    return sharp(image).greyscale().png().toBuffer()
+    return await sharp(image).greyscale().png().toBuffer()
   }
 
   async filterScreenshots(evidences: Evidence[]) {
@@ -248,10 +242,12 @@ export class Scraper {
         const criterias = await this.filterBasedOnCriterias(imgText)
 
         if (criterias.hasIrregularity) {
-          filteredEvidences.push({
-            ...evidence,
-            ...criterias
-          })
+          filteredEvidences.push(new Evidence({
+            print: evidence.print,
+            grayScalePrint: evidence.grayScalePrint,
+            properties: evidence.properties,
+            evidences: criterias
+          }))
         }
 
         console.log('OCR:', data.text)
@@ -264,7 +260,7 @@ export class Scraper {
     return filteredEvidences
   }
 
-  async filterBasedOnCriterias(text: string) {
+  filterBasedOnCriterias(text: string) {
     text = text.toLowerCase()
     const reason: Criteria = {
       gambleAdictAdvisement: false,

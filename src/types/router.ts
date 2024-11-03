@@ -30,11 +30,11 @@ export type ListResponse<T> = {
 
 export type TReply = {
     200: { 
-      message: string
-      toastMessage?: string 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data?: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        message: string
+        toastMessage?: string 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data?: any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } | Partial<ListResponse<any>>
     201: {
         message: string
@@ -42,14 +42,14 @@ export type TReply = {
         data?: any
     }
     302: { 
-      url: string 
-      message: string
-      toastMessage?: string 
-      shouldRedirect?: boolean 
+        url: string 
+        message: string
+        toastMessage?: string 
+        shouldRedirect?: boolean 
     }
     404: { 
-      message: string
-      toastMessage?: string 
+        message: string
+        toastMessage?: string 
     }
     400: { 
         message: string
@@ -69,8 +69,8 @@ export type TReply = {
         toastMessage?: string 
     }
     500: { 
-      message: string
-      toastMessage?: string 
+        message: string
+        toastMessage?: string 
     }
 }  
 
@@ -78,10 +78,9 @@ export type TReply = {
 type ReplyKeysToCodes = keyof TReply
 
 // Define um tipo que resolve o tipo de resposta baseado no código de status
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type ResolveReplyTypeWithRouteGeneric<Reply, Code> =
-    Code extends keyof TReply ? TReply[Code] : never
-
+type ResolveReplyTypeWithRouteGeneric<Reply extends TReply, Code> =
+    Code extends keyof Reply ? Reply[Code] : never
+  
 // Define um tipo genérico para o reply que é compatível com FastifyReply
 export type ReplyType<Code extends ReplyKeysToCodes = keyof TReply> = FastifyReply<
     RawServerBase,
@@ -108,10 +107,10 @@ export type RouterOptions<Code extends ReplyKeysToCodes = keyof TReply> = {
     description: string
     method: MethodApp<Code>[]
 }
-
-// Extensão do método code
-declare module 'fastify' {
-interface FastifyReply {
+  
+  // Extensão do método code
+  declare module 'fastify' {
+  interface FastifyReply {
         code<Code extends ReplyKeysToCodes>(statusCode: Code): FastifyReply<
             RawServerBase,
             RawRequestDefaultExpression<RawServerBase>,
@@ -124,3 +123,4 @@ interface FastifyReply {
         >
     }
 }
+  

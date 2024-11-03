@@ -24,7 +24,7 @@ export default class Bet extends BaseEntity {
   })
     status!: 'none' | 'suspect' | 'approved' | 'disapproved'
 
-  @Column('int')
+  @Column({ type: 'int', default: 0 })
     score!: number
 
   @OneToMany(() => Task, (task) => task.bet)

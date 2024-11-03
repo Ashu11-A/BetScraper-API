@@ -47,9 +47,11 @@ parse(dataset, {
   }
 }, async (error, result: BetsDataset[]) => {
   if (error) throw error
+  const process: Array<Promise<void>> = []
 
   for (const bet of result) {
-    await register(bet.Marcas, formatURL(bet.Domínios))
+    process.push(register(bet.Marcas, formatURL(bet.Domínios)))
   }
+  await Promise.all(process)
   await Database.destroy()
 })

@@ -1,12 +1,12 @@
 import { Queue } from '@/controllers/queue.js'
 import Bet from '@/database/entity/Bet.js'
 import { Cron } from '@/database/entity/Cron.js'
+import Compliance from '@/database/entity/Compliance.js'
 import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
 import { Scraper } from '@/lib/scraper.js'
-import { advisementRulesKeywords, bonusKeywords, legalAgeAdvisementKeywords } from '@/shared/consts/keywords/index.js'
-import { Job } from 'bull'
+import { DoneCallback, Job } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
@@ -22,9 +22,6 @@ type BetQueueType = {
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
 
-  static inQueue: number = 0
-  static processed: number = 0
-
   static async addToQueue({ bet, user, cron }: AddBetQueue) {
     const task = await Task.create({
       bet,
@@ -32,77 +29,103 @@ export class BetQueue {
       cron,
       status: 'scheduled',
     }).save()
-    BetQueue.inQueue = BetQueue.inQueue + 1
+
     return BetQueue.queue.add({ task })
   }
-}
-BetQueue.queue.process(async (job: Job<BetQueueType>, done) => {
-  const saveDir = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
-  await mkdir(saveDir, { recursive: true })
-  try {
-    console.log(`Starting Job ID: ${job.id}`)
 
-    const scraper = new Scraper(job.data.task.bet.url, [...bonusKeywords, ...legalAgeAdvisementKeywords, ...advisementRulesKeywords])
-    await scraper.loadPage()
-    await scraper.savePageContent(saveDir)
-    const initImage = await scraper.getScreenshotHomePage()
-    await scraper.closePopUp()
-    await scraper.scan()
-    await scraper.filter()
-    const screenshots = await scraper.getScreenshots()
-    const filteredScreenshots = await scraper.filterScreenshots(screenshots)
-
-    await writeFile(join(saveDir, '/initial.png'), initImage)
-    for (const [number, evidence] of Object.entries(filteredScreenshots)) {
-      await writeFile(join(saveDir, `/${number}.png`), evidence.print)
-    }
-    
-    await scraper.browser.close()
-
-    const jsonData = filteredScreenshots.map((evidence, index) => ({
-      ...evidence,
-      print: undefined,
-      grayScalePrint: undefined,
-      path: join(process.cwd(), `/${index}.png`),
-      pathName: `${index}.png`
-    }))
-    await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
-
-    done(null)
-  } catch (error) {
-    console.error(`Erro no Job ID ${job.id}:`, error)
-    done(error as Error)
+  static initialize () {
+    this.queue.process(this.process)
+    this.queue.on('completed', this.onCompleted)
+    this.queue.on('active', this.onActive)
+    this.queue.on('paused', this.onPaused)
+    this.queue.on('failed', this.onFailed)
   }
-})
 
-BetQueue.queue.on('completed', async (job: Job<BetQueueType>) => {
-  console.error(`Job ID ${job.id} completado.`)
-  const task = await Task.findOneByOrFail({ id: job.data.task.id })
+  static async process (job: Job<BetQueueType>, done: DoneCallback) {
+    const saveDir = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
+    await mkdir(saveDir, { recursive: true })
+    try {
+      console.log(`Starting Job ID: ${job.id}`)
+      const compliance = await Compliance.find()
+      const keywords = compliance.map((compliance) => compliance.value)
+      if (keywords.length === 0) throw new Error('No compliances recorded in the database')
+  
+      const scraper = new Scraper(job.data.task.bet.url, keywords)
+      await scraper.loadPage()
+      await scraper.savePageContent(saveDir)
+      const initImage = await scraper.getScreenshotHomePage()
+      await scraper.scan()
+      const compliancesFound = await scraper.filter()
+      
+      await scraper.closePopUp()
+      const screenshots = await scraper.getScreenshots()
+      const filteredScreenshots = await scraper.filterScreenshots(screenshots)
+  
+      await writeFile(join(saveDir, '/initial.png'), initImage)
+      for (const [number, evidence] of Object.entries(filteredScreenshots)) {
+        await writeFile(join(saveDir, `/${number}.png`), evidence.print)
+      }
+      
+      await scraper.browser.close()
+  
+      const jsonData = filteredScreenshots.map((evidence, index) => ({
+        ...evidence,
+        print: undefined,
+        grayScalePrint: undefined,
+        pathName: `${index}.png`
+      }))
+      await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
+  
+      // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
+      done(null, {
+        compliances: compliance.filter((compliance) => compliancesFound.includes(compliance.value))
+          .map((compliance) => compliance.id)
+      })
+    } catch (error) {
+      console.error(`Erro no Job ID ${job.id}:`, error)
+      done(error as Error)
+    }
+  }
 
-  await Task.update({ id: job.data.task.id }, {
-    status: 'completed',
-    finishedAt: new Date(),
-    duration: (new Date().getTime() - task.scheduledAt!.getTime()) / 1000
-  })
-})
-BetQueue.queue.on('active', async (job: Job<BetQueueType>) => {
-  console.error(`Job ID ${job.id} ativado.`)
-  await Task.update({ id: job.data.task.id }, {
-    status: 'running',
-    scheduledAt: new Date()
-  })
-})
-BetQueue.queue.on('paused', async (job: Job<BetQueueType>) => {
-  console.error(`Job ID ${job.id} pausado.`)
+  static async onCompleted(job: Job<BetQueueType>, result: { compliances: number[] }) {
+    console.error(`Job ID ${job.id} completado.`)
+    const task = await Task.findOneByOrFail({ id: job.data.task.id })
+    const compliances = (
+      await Promise.all(result.compliances.map((id) => Compliance.findOneBy({ id })))
+    ).filter((compliance) => compliance !== null)
+  
+    task.status = 'completed'
+    task.compliances = compliances
+    task.finishedAt = new Date()
+    task.duration = (new Date().getTime() - task.scheduledAt!.getTime()) / 1000
+  
+    await task.save()
+  }
 
-  await Task.update({ id: job.data.task.id }, {
-    status: 'paused'
-  })
-})
-BetQueue.queue.on('failed', async (job: Job<BetQueueType>, error) => {
-  console.error(`Job ID ${job.id} falhou:`, error.message)
-  await Task.update({ id: job.data.task.id }, {
-    status: 'failed',
-    errorMessage: error.message
-  })
-})
+  static async onActive(job: Job<BetQueueType>) {
+    console.error(`Job ID ${job.id} ativado.`)
+    await Task.update({ id: job.data.task.id }, {
+      status: 'running',
+      scheduledAt: new Date()
+    })
+  }
+
+  static async onPaused(job: Job<BetQueueType>) {
+    console.error(`Job ID ${job.id} pausado.`)
+    
+    await Task.update({ id: job.data.task.id }, {
+      status: 'paused'
+    })
+  }
+
+  static async onFailed(job: Job<BetQueueType>, error: Error) {
+    console.error(`Job ID ${job.id} falhou:`, error.message)
+    
+    await Task.update({ id: job.data.task.id }, {
+      status: 'failed',
+      errorMessage: error.message
+    })
+  }
+}
+
+BetQueue.initialize()

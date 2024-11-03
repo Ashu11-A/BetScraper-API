@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { glob } from 'glob'
 import { dirname, join } from 'path'
 import { DataSource } from 'typeorm'

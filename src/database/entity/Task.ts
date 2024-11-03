@@ -1,6 +1,7 @@
-import { BaseEntity, Column, CreateDateColumn, Entity, Generated, ManyToOne, PrimaryGeneratedColumn, type Relation, UpdateDateColumn } from 'typeorm'
+import { BaseEntity, Column, CreateDateColumn, Entity, Generated, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation, UpdateDateColumn } from 'typeorm'
 import Bet from './Bet.js'
 import { Cron } from './Cron.js'
+import Compliance from './Compliance.js'
 import { User } from './User.js'
 
 enum StatusTask {
@@ -24,6 +25,9 @@ export class Task extends BaseEntity {
     user?: Relation<User>
   @ManyToOne(() => Cron, (cron) => cron.expression, { nullable: true, cascade: true })
     cron?: Relation<Cron>
+  @ManyToMany(() => Compliance)
+  @JoinTable()
+    compliances!: Relation<Compliance[]>
   
   @Column({
     type: 'enum',

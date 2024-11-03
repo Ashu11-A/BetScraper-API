@@ -1,5 +1,4 @@
 import { BaseEntity, Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn, type Relation } from 'typeorm'
-import Infraction from './Infraction.js'
 import { Task } from './Task.js'
 
 export enum BetStatusEnum {
@@ -28,8 +27,6 @@ export default class Bet extends BaseEntity {
   @Column('int')
     score!: number
 
-  @OneToMany(() => Infraction, (infraction) => infraction.bets)
-    infractions!: Relation<Infraction[]>
   @OneToMany(() => Task, (task) => task.bet)
     tasks!: Relation<Task[]>
 

@@ -1,5 +1,6 @@
 export const legalAgeAdvisementKeywords = [
   '18+',
+  '🔞',
   'Proibido para menores de 18 anos',
   'Apenas para maiores de 18 anos',
   'Somente maiores de 18',

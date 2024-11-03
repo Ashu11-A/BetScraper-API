@@ -174,15 +174,21 @@ export class Scraper {
     }
 
     const filteredElements = []
+    const stringsFound: string[] = []
 
     for (const element of this.elements) {
-      const textContent = await element.evaluate(el => el?.textContent || '')
+      const textContent = await element.evaluate(el => el?.textContent)
+      if (typeof textContent !== 'string') continue
+  
       const foundKeywords = this.keywords.filter(keyword => textContent.includes(keyword))
-
-      if (foundKeywords.length > 0) filteredElements.push(element)
+      if (foundKeywords.length > 0) {
+        filteredElements.push(element)
+        stringsFound.push(...foundKeywords)
+      }
     }
 
     this.elements = filteredElements
+    return stringsFound 
   }
 
   async getScreenshotHomePage(): Promise<Uint8Array> {

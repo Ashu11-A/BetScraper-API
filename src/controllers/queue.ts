@@ -9,10 +9,6 @@ export class Queue<T> extends QueueBull<T> {
       defaultJobOptions: {
         attempts: 2,
       },
-      limiter: {
-        max: 4,
-        duration: 10000,
-      },
       redis: {
         host: process.env['REDIS_HOST'],
         port: Number(process.env['REDIS_PORT']),

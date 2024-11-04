@@ -12,7 +12,7 @@ export enum BetStatusEnum {
 export default class Bet extends BaseEntity {
   @PrimaryGeneratedColumn()
     id!: number
-  @Column()
+  @Column('varchar')
     name!: string
   @Column('varchar')
     url!: string

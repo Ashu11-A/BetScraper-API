@@ -6,6 +6,7 @@
   "private": "true",
   "scripts": {
     "dev": "bun --watch src/app.ts",
+    "build": "rimraf dist && tsup && tsc-alias -p ./tsconfig.json",
     "lint": "eslint -c eslint.config.mjs",
     "typeorm": "typeorm-ts-node-esm -d ./src/database/dataSource.ts",
     "schema:sync": "bun run typeorm -- schema:sync",
@@ -15,6 +16,22 @@
     "migration:show": "bun run typeorm -- migration:show",
     "migration:run": "bun run typeorm -- migration:run",
     "migration:revert": "bun run typeorm -- migration:revert"
+  },
+  "tsup": {
+    "platform": "node",
+    "format": "esm",
+    "entry": ["src/**/*.ts"],
+    "outDir": "dist/mjs/src",
+    "tsconfig": "./tsconfig.json",
+    "bundle": false,
+    "minify": true,
+    "minifyIdentifiers": true,
+    "minifySyntax": true,
+    "minifyWhitespace": true,
+    "skipNodeModulesBundle": true,
+    "splitting": true,
+    "clean": true,
+    "dts": false
   },
   "keywords": [],
   "author": "",
@@ -30,7 +47,10 @@
     "@types/sharp": "^0.32.0",
     "eslint": "^9.9.1",
     "globals": "^15.9.0",
+    "rimraf": "^6.0.1",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.10",
+    "tsup": "^8.3.5",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.3.0"
   },

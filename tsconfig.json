@@ -20,13 +20,12 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
 
-    "outDir": "./dist",
+    "outDir": "./dist/mjs",
     "rootDir": "./",
     "baseUrl": "./",
     "paths": {
       "@/*": ["./src/*"]
     },
-    "typeRoots": ["src/types/**/*.d.ts"]
   },
   "include": ["src", "routers", "scripts"],
   "exclude": ["node_modules", "dist"]

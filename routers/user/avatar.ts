@@ -15,12 +15,11 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const avatarFilePath = join(storageImagePath, `${request.user!.uuid}.png`)
-
         if (!existsSync(avatarFilePath)) {
           return reply.code(404).send({ message: 'Avatar not found.' })
         }
 
-        return reply.sendFile(avatarFilePath)
+        return reply.sendFile(`/avatars/${request.user!.uuid}.png`)
       },
     },
     {

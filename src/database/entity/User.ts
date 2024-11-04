@@ -25,8 +25,8 @@ export class User extends BaseEntity {
   @Column({ type: 'text' })
     password!: string
 
-  @UpdateDateColumn({ type: 'timestamp' })
-    updatedAt!: number
-  @CreateDateColumn({ type: 'timestamp' })
-    createdAt!: number
+  @UpdateDateColumn()
+    updatedAt!: Date
+  @CreateDateColumn()
+    createdAt!: Date
 }

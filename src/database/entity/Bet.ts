@@ -30,8 +30,8 @@ export default class Bet extends BaseEntity {
   @OneToMany(() => Task, (task) => task.bet)
     tasks!: Relation<Task[]>
 
-  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
-    updatedAt!: number
-  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })
-    createdAt!: number
+  @UpdateDateColumn()
+    updatedAt!: Date
+  @CreateDateColumn()
+    createdAt!: Date
 }

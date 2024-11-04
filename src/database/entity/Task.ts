@@ -1,7 +1,7 @@
 import { BaseEntity, Column, CreateDateColumn, Entity, Generated, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation, UpdateDateColumn } from 'typeorm'
 import Bet from './Bet.js'
-import { Cron } from './Cron.js'
 import Compliance from './Compliance.js'
+import { Cron } from './Cron.js'
 import { User } from './User.js'
 
 enum StatusTask {
@@ -45,8 +45,8 @@ export class Task extends BaseEntity {
     scheduledAt?: Date
   @Column('timestamp', { nullable: true })
     finishedAt?: Date
-  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
-    updatedAt!: number
-  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })
-    createdAt!: number
+  @UpdateDateColumn()
+    updatedAt!: Date
+  @CreateDateColumn()
+    createdAt!: Date
 }

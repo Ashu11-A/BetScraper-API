@@ -19,8 +19,8 @@ export class Cron extends BaseEntity {
   @Column('timestamp', { nullable: true })
     nextExecutionAt?: Date
 
-  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)' })
+  @UpdateDateColumn()
     updatedAt!: number
-  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP(6)', onUpdate: 'CURRENT_TIMESTAMP(6)' })
+  @CreateDateColumn()
     createdAt!: number
 }

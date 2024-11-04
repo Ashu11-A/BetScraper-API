@@ -33,10 +33,8 @@ export default new Router({
 
         return reply.code(200).send({
           message: 'Users retrieved successfully.',
-          data: {
-            ...paginatedResult,
-            data: usersData
-          }
+          ...paginatedResult,
+          data: usersData
         })
       },
     }

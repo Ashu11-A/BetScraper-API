@@ -35,18 +35,19 @@ export default new Router({
 
         try {
           const [betRecord, userRecord, cronRecord] = await Promise.all([
-            betId ? Bet.findOneBy({ id: betId }) : Promise.resolve(null),
+            Bet.findOneBy({ id: betId }),
             userId ? User.findOneBy({ id: userId }) : Promise.resolve(null),
             cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
           ])
 
+          console.log(betRecord)
+
           if (!betRecord) return reply.code(404).send({ message: 'Bet not found.' })
-          if (!userRecord)  return reply.code(404).send({ message: 'User not found.' })
-          if (cronId && !cronRecord) return reply.code(404).send({ message: 'Cron task not found.' })
+          if (!userRecord && !cronRecord) return reply.code(404).send({ message: 'User and Cron are undefined, at least one must be specified' })
 
           const queueTask = await BetQueue.addToQueue({
-            user: userRecord,
             bet: betRecord,
+            user: userRecord || undefined,
             cron: cronRecord || undefined,
           })
 

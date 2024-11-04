@@ -35,9 +35,13 @@ export class BetQueue {
       BetQueue.initialize()
       BetQueue.started = true
     }
-    return BetQueue.queue.add({ task }, {
-      repeat: cron !== undefined ? { cron: cron.expression } : undefined,
+    const queue = BetQueue.queue.add({ task }, {
+      jobId: cron !== undefined ? task.bet.id : undefined,
+      repeat: cron !== undefined ? { cron: cron.expression,  } : undefined,
+      removeOnComplete: cron === undefined ? true : false,
+      removeOnFail: cron === undefined ? true : false
     })
+    return queue
   }
 
   static initialize() {
@@ -135,4 +139,14 @@ export class BetQueue {
       errorMessage: error.message
     })
   }
+
+  static removeAllRepeatable = async (): Promise<void> => {
+    const queue = BetQueue.queue
+    const jobs = await queue.getRepeatableJobs()
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i]
+      await queue.removeRepeatable({ cron: job.cron, jobId: job.id })
+    }
+  }
 }
+await BetQueue.removeAllRepeatable()

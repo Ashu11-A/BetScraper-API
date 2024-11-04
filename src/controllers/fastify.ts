@@ -1,15 +1,16 @@
 import { fastifyCookie } from '@fastify/cookie'
 import { fastifyMultipart } from '@fastify/multipart'
 import { Authenticator } from '@fastify/passport'
+import { fastifySession } from '@fastify/session'
 import { fastifyStatic } from '@fastify/static'
 import { fastifyWebsocket } from '@fastify/websocket'
 import fastify, { FastifyInstance } from 'fastify'
-import { fastifySession } from '@fastify/session'
 
 import { BearerStrategy } from '@/strategies/BearerStrategy.js'
 
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
+
 
 export const fastifyPassport = new Authenticator()
 
@@ -23,7 +24,19 @@ export class Fastify {
   constructor(public options: Options){}
 
   init () {
-    const server = fastify({ logger: true })
+    const server = fastify({
+      logger: {
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'SYS:standard', // Formato de data e hora
+            ignore: 'pid,hostname,reqId', // Ignorar campos desnecessários
+          },
+        },
+      },
+    })
+    
     const cookieToken = process.env['COOKIE_TOKEN']
     const sessionToken = process.env['SESSION_TOKEN']
 

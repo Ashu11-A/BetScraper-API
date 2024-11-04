@@ -3,6 +3,7 @@ import { MethodType, RouterOptions } from '@/types/router.js'
 import { glob } from 'glob'
 import { basename, dirname, extname, join } from 'path'
 import { Fastify, fastifyPassport } from './fastify.js'
+import chalk from 'chalk'
 
 export class Router {
   static all: Router[] = []
@@ -52,10 +53,8 @@ export class Router {
       path = join('/', path)
       
       for (const method of router.options.method) {
-
         const auth = method.authenticate ? { preValidation: fastifyPassport.authenticate(method.authenticate) } : {}
 
-        console.log(path, router.options)
         switch(method.type) {
         case MethodType.Get: {
           Fastify.server.get(path, auth, method.run)
@@ -78,6 +77,14 @@ export class Router {
         }
         }
       }
+
+      console.log(chalk.green(`
+📡 The route ${chalk.blueBright(path)} has been successfully registered!
+    🏷️  Route Name: ${chalk.cyan(router.options.name)}
+    📃 Description: ${chalk.yellow(router.options.description)}
+    📋 Methods: ${chalk.magenta(router.options.method.map((method) => method.type).join(', '))}
+      `))
+      
     }
   }
 }

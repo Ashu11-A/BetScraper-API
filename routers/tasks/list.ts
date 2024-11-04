@@ -4,23 +4,28 @@ import { paginate, paginateSchema } from '@/database/pagination.js'
 import { MethodType } from '@/types/router.js'
 import { z } from 'zod'
 
-const schema = z.object({
+const querySchema = z.object({
   betId: z.string().optional().transform((value) => value ? parseInt(value) : undefined)
 }).merge(paginateSchema)
 
 export default new Router({
-  name: 'list',
-  description: 'List all tasks',
+  name: 'ListTasks',
+  description: 'Retrieves a paginated list of tasks, optionally filtered by bet ID.',
   method: [
     {
       type: MethodType.Get,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = schema.safeParse(request.query)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = querySchema.safeParse(request.query)
+        if (!validation.success) {
+          return reply.code(400).send({
+            message: 'Invalid query parameters.',
+            zod: validation.error
+          })
+        }
 
-        const { interval, page, pageSize, day, betId } = parsed.data
-        const tasks = await paginate({
+        const { interval, page, pageSize, day, betId } = validation.data
+        const taskList = await paginate({
           repository: tasksRepository, 
           interval,
           page,
@@ -29,7 +34,10 @@ export default new Router({
           bet: betId !== undefined ? { id: betId } : undefined,
         })
 
-        return reply.code(200).send(tasks)
+        return reply.code(200).send({
+          message: 'Tasks retrieved successfully.',
+          ...taskList
+        })
       },
     }
   ]

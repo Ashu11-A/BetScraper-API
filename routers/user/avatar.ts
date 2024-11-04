@@ -7,20 +7,20 @@ import { join } from 'path'
 import sharp from 'sharp'
 
 export default new Router({
-  name: 'Avatar',
-  description: 'Manager Avatars',
+  name: 'UserAvatar',
+  description: 'Avatar management for users, including upload and retrieval.',
   method: [
     {
       type: MethodType.Get,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const path = join(storageImagePath, `${request.user!.uuid}.png`)
+        const avatarFilePath = join(storageImagePath, `${request.user!.uuid}.png`)
 
-        if (!existsSync(path)) {
-          return reply.code(404).send({ message: 'Arquivo não encontrado'  })
+        if (!existsSync(avatarFilePath)) {
+          return reply.code(404).send({ message: 'Avatar not found.' })
         }
 
-        return reply.sendFile(path)
+        return reply.sendFile(avatarFilePath)
       },
     },
     {
@@ -28,21 +28,26 @@ export default new Router({
       authenticate: ['bearer'],
       async run(request, reply) {
         const userUUID = request.user!.uuid
-        const data = await request.file()
-        if (!data) return reply.code(422).send({ message: 'Arquivo não encontrado' })
+        const uploadedFile = await request.file()
+        if (!uploadedFile) {
+          return reply.code(422).send({ message: 'File upload failed: No file provided.' })
+        }
 
-        // Criação do diretório caso não exista
+        // Create directory if it does not exist
         await mkdir(storageImagePath, { recursive: true })
 
-        const path = join(storageImagePath, `${userUUID}.png`)
+        const avatarFilePath = join(storageImagePath, `${userUUID}.png`)
 
-        // Processamento da imagem e salvamento diretamente em arquivo
-        await sharp(await data.toBuffer())
+        // Process the image and save directly to file
+        await sharp(await uploadedFile.toBuffer())
           .resize(256)
           .png({ compressionLevel: 9 })
-          .toFile(path)
+          .toFile(avatarFilePath)
 
-        return reply.code(200).send({ message: 'Avatar salvo com sucesso!', toastMessage: 'Seu avatar foi salvo!' })
+        return reply.code(200).send({ 
+          message: 'Avatar uploaded successfully!', 
+          toastMessage: 'Your avatar has been saved!' 
+        })
       },
     }
   ]

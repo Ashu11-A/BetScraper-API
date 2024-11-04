@@ -33,69 +33,122 @@ const updateSchema = z.object({
 })
 
 export default new Router({
-  name: 'Cron',
-  description: 'Cron Manager',
+  name: 'CronManagement',
+  description: 'Handles CRUD operations for cron schedules in the database',
   method: [
     {
       type: MethodType.Get,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = paginateSchema.safeParse(request.query)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
-        const { page, pageSize, interval, day } = parsed.data
+        const validation = paginateSchema.safeParse(request.query)
+        if (!validation.success) {
+          return reply.code(400).send({ 
+            message: 'Invalid query parameters.',
+            zod: validation.error
+          })
+        }
+        
+        const { page, pageSize, interval, day } = validation.data
 
-        const crons = await paginate({
-          repository: cronRepository,
-          interval,
-          page,
-          pageSize,
-          day
-        })
-        return reply.code(200).send(crons)
+        try {
+          const cronRecords = await paginate({
+            repository: cronRepository,
+            interval,
+            page,
+            pageSize,
+            day
+          })
+          
+          return reply.code(200).send({
+            message: 'Cron records retrieved successfully.',
+            ...cronRecords
+          })
+        } catch (error) {
+          console.error('Error retrieving cron records:', error)
+          return reply.code(500).send({ 
+            message: 'Failed to retrieve cron records. Please try again later.'
+          })
+        }
       }
     },
     {
       type: MethodType.Post,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = createSchema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = createSchema.safeParse(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({ 
+            message: 'Invalid cron expression.',
+            zod: validation.error
+          })
+        }
         
-        const cron = await Cron.create({ ...parsed.data }).save()
-        return reply.code(201).send({ 
-          message: 'Cron criado com sucesso!',
-          data: cron
-        })
+        try {
+          const newCron = await Cron.create({ ...validation.data }).save()
+          return reply.code(201).send({ 
+            message: 'Cron schedule created successfully.',
+            data: newCron
+          })
+        } catch (error) {
+          console.error('Error creating cron schedule:', error)
+          return reply.code(500).send({ 
+            message: 'Failed to create cron schedule. Please try again later.'
+          })
+        }
       }
     },
     {
       type: MethodType.Put,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = await updateSchema.safeParseAsync(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = await updateSchema.safeParseAsync(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({ 
+            message: 'Invalid input for updating cron schedule.',
+            zod: validation.error
+          })
+        }
+        
+        try {
+          await Cron.update({ id: validation.data.id }, { ...validation.data })
+          const updatedCron = await Cron.findOneBy({ id: validation.data.id })
 
-        const cron = await Cron.update({ id: parsed.data.id }, {
-          ...parsed.data
-        })
-        return reply.code(200).send({
-          message: 'Cron editado com sucesso!',
-          data: cron
-        })
+          return reply.code(200).send({
+            message: 'Cron schedule updated successfully.',
+            data: updatedCron
+          })
+        } catch (error) {
+          console.error('Error updating cron schedule:', error)
+          return reply.code(500).send({ 
+            message: 'Failed to update cron schedule. Please try again later.'
+          })
+        }
       }
     },
     {
       type: MethodType.Delete,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = await deleteSchema.safeParseAsync(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = await deleteSchema.safeParseAsync(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({ 
+            message: 'Invalid request for deleting cron schedule.',
+            zod: validation.error
+          })
+        }
         
-        const result = await Cron.delete({ id: parsed.data.id })
-        return reply.code(200).send({
-          message: 'Cron deletado com sucesso!',
-          data: result
-        })
+        try {
+          const deletionResult = await Cron.delete({ id: validation.data.id })
+          return reply.code(200).send({
+            message: 'Cron schedule deleted successfully.',
+            data: deletionResult
+          })
+        } catch (error) {
+          console.error('Error deleting cron schedule:', error)
+          return reply.code(500).send({ 
+            message: 'Failed to delete cron schedule. Please try again later.'
+          })
+        }
       }
     }
   ]

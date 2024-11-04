@@ -10,24 +10,42 @@ const schema = z.object({
 })
 
 export default new Router({
-  name: 'Bet create',
-  description: 'Bet manager',
+  name: 'UpdateBet',
+  description: 'Updates existing bet records in the database',
   method: [
     {
       type: MethodType.Put,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = schema.safeParse(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({
+            message: 'Invalid request data. Please check your input.',
+            zod: validation.error
+          })
+        }
 
-        const exist = await Bet.findOneBy({ id: parsed.data.id })
-        if (exist === null) return reply.code(404).send({ message: 'Bet not found' })
+        const { id, ...updateFields } = validation.data
 
-        const bet = await Bet.update({ id: exist.id }, { ...parsed.data })
-        return reply.code(200).send({ 
-          message: 'Bet registrado com sucesso no banco de dados!',
-          data: bet
-        })
+        const existingBet = await Bet.findOneBy({ id })
+        if (!existingBet) {
+          return reply.code(404).send({ message: 'Bet not found' })
+        }
+
+        try {
+          await Bet.update({ id }, updateFields)
+          const updatedBet = await Bet.findOneBy({ id })
+
+          return reply.code(200).send({
+            message: 'Bet successfully updated!',
+            data: updatedBet
+          })
+        } catch (error) {
+          console.error('Error updating bet:', error)
+          return reply.code(500).send({
+            message: 'An error occurred while updating the bet. Please try again later.'
+          })
+        }
       }
     }
   ]

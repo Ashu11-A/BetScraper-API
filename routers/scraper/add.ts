@@ -11,39 +11,55 @@ const schema = z.object({
   userId: z.number().optional(),
   cronId: z.number().optional()
 }).refine((data) => data.betId || data.cronId, {
-  message: 'É necessário que pelo menos betId ou cronId seja definido.',
+  message: 'At least betId or cronId must be set.',
   path: ['betId', 'cronId']
 })
 
 export default new Router({
-  name: 'Scraping',
-  description: 'Adiciona uma tarefa de scraping à fila',
+  name: 'AddScrapingTask',
+  description: 'Queues a new scraping task associated with a bet, user, and optionally a cron task.',
   method: [
     {
       type: MethodType.Post,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        const validation = schema.safeParse(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({
+            message: 'Validation error in input parameters.',
+            zod: validation.error
+          })
+        }
 
-        const { userId, betId, cronId } = parsed.data
-        const [bet, user, cron] = await Promise.all([
-          betId ? Bet.findOneBy({ id: betId }) : Promise.resolve(null),
-          User.findOneBy({ id: userId }),
-          cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
-        ])
+        const { userId, betId, cronId } = validation.data
 
-        if (!bet) return reply.code(404).send({ message: 'Bet não encontrado.' })
-        if (!user) return reply.code(404).send({ message: 'User não encontrado.' })
-        if (!cron && cronId) return reply.code(404).send({ message: 'Cron não encontrado.' })
+        try {
+          const [betRecord, userRecord, cronRecord] = await Promise.all([
+            betId ? Bet.findOneBy({ id: betId }) : Promise.resolve(null),
+            userId ? User.findOneBy({ id: userId }) : Promise.resolve(null),
+            cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
+          ])
 
-        const queue = await BetQueue.addToQueue({
-          user,
-          bet,
-          cron: cron === null ? undefined : cron,
-        })
+          if (!betRecord) return reply.code(404).send({ message: 'Bet not found.' })
+          if (!userRecord)  return reply.code(404).send({ message: 'User not found.' })
+          if (cronId && !cronRecord) return reply.code(404).send({ message: 'Cron task not found.' })
 
-        return reply.code(200).send({ message: 'Ação adicionada com sucesso a fila!', data: queue })
+          const queueTask = await BetQueue.addToQueue({
+            user: userRecord,
+            bet: betRecord,
+            cron: cronRecord || undefined,
+          })
+
+          return reply.code(200).send({
+            message: 'Scraping task successfully queued!',
+            data: queueTask
+          })
+        } catch (error) {
+          console.error('Error queuing the scraping task:', error)
+          return reply.code(500).send({
+            message: 'Internal error when trying to add the task to the queue. Please try again later.'
+          })
+        }
       }
     }
   ]

@@ -10,28 +10,38 @@ const schema = z.object({
 })
 
 export default new Router({
-  name: 'Search Bets',
-  description: 'Consult in Database',
+  name: 'SearchBets',
+  description: 'Performs a search for bets in the database based on provided criteria',
   method: [
     {
       type: MethodType.Post,
       authenticate: ['bearer'],
       async run(request, reply) {
-        const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
-        
-        const bets = await Bet.find({
-          where: [
-            // Isso irá pegar todos as bets que tenham os elementos passados pelo body
-            ...Object.entries(parsed.data).map(([name, value]) => ({ [name]: value }))
-          ]
-        })
+        const validation = schema.safeParse(request.body)
+        if (!validation.success) {
+          return reply.code(400).send({
+            message: 'Invalid request body. Please verify your input.',
+            zod: validation.error
+          })
+        }
 
-        return reply.code(200).send({
-          message: 'Request realizado com sucesso!',
-          data: bets
-        })
-      },
+        try {
+          const searchCriteria = validation.data
+          const foundBets = await Bet.find({
+            where: Object.entries(searchCriteria).map(([field, value]) => ({ [field]: value }))
+          })
+
+          return reply.code(200).send({
+            message: 'Bets successfully retrieved.',
+            data: foundBets
+          })
+        } catch (error) {
+          console.error('Error searching for bets:', error)
+          return reply.code(500).send({
+            message: 'An error occurred while searching for bets. Please try again later.'
+          })
+        }
+      }
     }
   ]
 })

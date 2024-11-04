@@ -17,14 +17,19 @@ const schema = z.object({
 export type RegisterType = z.infer<typeof schema>
 
 export default new Router({
-  name: 'Register',
-  description: 'Registra novos usuários no banco de dados',
+  name: 'UserRegistration',
+  description: 'Handles new user registration, including validation and secure password storage',
   method: [
     {
       type: MethodType.Post,
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        if (!parsed.success) {
+          return reply.code(400).send({ 
+            message: 'Validation error. Please check the input data.', 
+            zod: parsed.error 
+          })
+        }
 
         const existUser = await User.findOne({
           where: [
@@ -32,9 +37,11 @@ export default new Router({
             { email: parsed.data.email }
           ]
         })
-        if (existUser) return reply.code(422).send({
-          message: 'Email or username already in use'
-        })
+        if (existUser) {
+          return reply.code(422).send({
+            message: 'A user with the provided email or username already exists. Please use different credentials.'
+          })
+        }
 
         const password = await hash(parsed.data.password, saltRounds)
         const user = await User.create({
@@ -42,9 +49,15 @@ export default new Router({
           password
         }).save()
 
-        return reply.code(200).send({
-          message: 'Usuário registrado com sucesso!',
-          data: user
+        return reply.code(201).send({
+          message: 'User registered successfully!',
+          data: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            email: user.email,
+            language: user.language,
+          }
         })
       }
     }

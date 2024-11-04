@@ -9,21 +9,25 @@ const schema = z.object({
 })
 
 export default new Router({
-  name: 'Bet create',
-  description: 'Bet manager',
+  name: 'CreateBet',
+  description: 'Handles the creation of new bet entries, including input validation and duplicate checks',
   method: [
     {
       type: MethodType.Post,
       authenticate: ['bearer'],
       async run(request, reply) {
         const parsed = schema.safeParse(request.body)
-        if (!parsed.success) return reply.code(400).send({ message: parsed.error.message, zod: parsed.error })
+        if (!parsed.success) {
+          return reply.code(400).send({ 
+            message: 'Invalid input data. Please correct the errors and try again.', 
+            zod: parsed.error
+          })
+        }
 
-        const exist = await Bet.findOneBy({ url: parsed.data.url })
-
-        if (exist !== null) {
+        const existingBet = await Bet.findOneBy({ url: parsed.data.url })
+        if (existingBet) {
           return reply.code(422).send({
-            message: 'Name or URL already registered in the database'
+            message: 'A bet with the provided name or URL already exists. Please use different details.'
           })
         }
 
@@ -34,9 +38,17 @@ export default new Router({
         })
         await bet.save()
 
-        return reply.code(200).send({
-          message: 'Bet criado com sucesso!',
-          data: bet
+        return reply.code(201).send({
+          message: 'Bet successfully created!',
+          data: {
+            id: bet.id,
+            name: bet.name,
+            url: bet.url,
+            status: bet.status,
+            score: bet.score,
+            createdAt: bet.createdAt,
+            updatedAt: bet.updatedAt
+          }
         })
       }
     }

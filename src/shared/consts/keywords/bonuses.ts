@@ -2,7 +2,6 @@ export const bonusKeywords = [
   'créditos',
   'bônus',
   'bonus',
-  'bônu',
   'crédito',
   'credito',
   'incentivo',

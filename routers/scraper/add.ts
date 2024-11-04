@@ -9,7 +9,7 @@ import { z } from 'zod'
 const schema = z.object({
   betId: z.number(),
   userId: z.number().optional(),
-  cronId: z.number()
+  cronId: z.number().optional()
 }).refine((data) => data.betId || data.cronId, {
   message: 'É necessário que pelo menos betId ou cronId seja definido.',
   path: ['betId', 'cronId']
@@ -30,17 +30,17 @@ export default new Router({
         const [bet, user, cron] = await Promise.all([
           betId ? Bet.findOneBy({ id: betId }) : Promise.resolve(null),
           User.findOneBy({ id: userId }),
-          Cron.findOneBy({ id: cronId }),
+          cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
         ])
 
         if (!bet) return reply.code(404).send({ message: 'Bet não encontrado.' })
         if (!user) return reply.code(404).send({ message: 'User não encontrado.' })
-        if (!cron) return reply.code(404).send({ message: 'Cron não encontrado.' })
+        if (!cron && cronId) return reply.code(404).send({ message: 'Cron não encontrado.' })
 
         const queue = await BetQueue.addToQueue({
           user,
           bet,
-          cron,
+          cron: cron === null ? undefined : cron,
         })
 
         return reply.code(200).send({ message: 'Ação adicionada com sucesso a fila!', data: queue })

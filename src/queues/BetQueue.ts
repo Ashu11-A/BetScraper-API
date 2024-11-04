@@ -13,7 +13,7 @@ import { join } from 'path'
 type AddBetQueue = {
   bet: Bet,
   user?: User,
-  cron: Cron
+  cron?: Cron
 }
 type BetQueueType = {
   task: Task
@@ -21,6 +21,7 @@ type BetQueueType = {
 
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
+  static started = false
 
   static async addToQueue({ bet, user, cron }: AddBetQueue) {
     const task = await Task.create({
@@ -29,10 +30,13 @@ export class BetQueue {
       cron,
       status: 'scheduled',
     }).save()
-
+    console.log(BetQueue.started)
+    if (!BetQueue.started) {
+      BetQueue.initialize()
+      BetQueue.started = true
+    }
     return BetQueue.queue.add({ task }, {
-      jobId: bet.id,
-      repeat: { cron: cron.expression },
+      repeat: cron !== undefined ? { cron: cron.expression } : undefined,
     })
   }
 
@@ -60,24 +64,26 @@ export class BetQueue {
       await scraper.scan()
       const compliancesFound = await scraper.filter()
 
-      await scraper.closePopUp()
-      const screenshots = await scraper.getScreenshots()
-      const filteredScreenshots = await scraper.filterScreenshots(screenshots)
+      if (compliancesFound.length > 0) {
+        await scraper.closePopUp()
+        const screenshots = await scraper.getScreenshots()
+        const filteredScreenshots = await scraper.filterScreenshots(screenshots)
+  
+        await writeFile(join(saveDir, '/initial.png'), initImage)
+        for (const [number, evidence] of Object.entries(filteredScreenshots)) {
+          await writeFile(join(saveDir, `/${number}.png`), evidence.print)
+        }
 
-      await writeFile(join(saveDir, '/initial.png'), initImage)
-      for (const [number, evidence] of Object.entries(filteredScreenshots)) {
-        await writeFile(join(saveDir, `/${number}.png`), evidence.print)
+        const jsonData = filteredScreenshots.map((evidence, index) => ({
+          ...evidence,
+          print: undefined,
+          grayScalePrint: undefined,
+          pathName: `${index}.png`
+        }))
+        await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
       }
 
       await scraper.browser.close()
-
-      const jsonData = filteredScreenshots.map((evidence, index) => ({
-        ...evidence,
-        print: undefined,
-        grayScalePrint: undefined,
-        pathName: `${index}.png`
-      }))
-      await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(jsonData, null, 2))
 
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       done(null, {
@@ -130,5 +136,3 @@ export class BetQueue {
     })
   }
 }
-
-BetQueue.initialize()

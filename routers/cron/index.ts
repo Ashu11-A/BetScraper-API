@@ -110,8 +110,13 @@ export default new Router({
         }
         
         try {
-          await Cron.update({ id: validation.data.id }, { ...validation.data })
-          const updatedCron = await Cron.findOneBy({ id: validation.data.id })
+          const updatedCron = await Cron.update({ id: validation.data.id }, validation.data)
+
+          if (updatedCron.affected === 0) {
+            return reply.code(404).send({ 
+              message: 'Cron not found or no changes made.' 
+            })
+          }
 
           return reply.code(200).send({
             message: 'Cron schedule updated successfully.',

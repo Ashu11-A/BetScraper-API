@@ -38,7 +38,7 @@ export default new Router({
 
         return reply.code(200).send({ 
           message: 'User profile updated successfully.', 
-          data: validation.data 
+          data: updateResult
         })
       },
     }

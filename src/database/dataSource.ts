@@ -14,6 +14,7 @@ export default new DataSource({
   password: process.env['DATABASE_PASSWORD'],
   database: process.env['DATABASE_NAME'],
   synchronize: false,
+  charset: 'utf8mb4',
   logging: true,
   entities: await glob(join(path, 'entity', '**/*.{js,ts}')),
   migrations: await glob(join(path, 'migration', '**/*.{js,ts}')),

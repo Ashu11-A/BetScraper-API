@@ -10,31 +10,26 @@ import { DoneCallback, Job } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
-type AddBetQueue = {
+export type AddBetQueue = {
   bet: Bet,
   user?: User,
   cron?: Cron
 }
-type BetQueueType = {
+export type BetQueueType = {
   task: Task
 }
 
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
-  static started = false
 
-  static async addToQueue({ bet, user, cron }: AddBetQueue) {
+  async addToQueue({ bet, user, cron }: AddBetQueue) {
     const task = await Task.create({
       bet,
       user,
-      cron,
       status: 'scheduled',
     }).save()
-    console.log(BetQueue.started)
-    if (!BetQueue.started) {
-      BetQueue.initialize()
-      BetQueue.started = true
-    }
+    
+    BetQueue.queue.add({ task })
     const queue = BetQueue.queue.add({ task }, {
       jobId: cron !== undefined ? task.bet.id : undefined,
       repeat: cron !== undefined ? { cron: cron.expression,  } : undefined,
@@ -45,11 +40,12 @@ export class BetQueue {
   }
 
   static initialize() {
-    this.queue.process(this.process)
-    this.queue.on('completed', this.onCompleted)
-    this.queue.on('active', this.onActive)
-    this.queue.on('paused', this.onPaused)
-    this.queue.on('failed', this.onFailed)
+    console.log('Initialize')
+    BetQueue.queue.process(this.process)
+    BetQueue.queue.on('completed', this.onCompleted)
+    BetQueue.queue.on('active', this.onActive)
+    BetQueue.queue.on('paused', this.onPaused)
+    BetQueue.queue.on('failed', this.onFailed)
   }
 
   static async process(job: Job<BetQueueType>, done: DoneCallback) {
@@ -149,4 +145,3 @@ export class BetQueue {
     }
   }
 }
-await BetQueue.removeAllRepeatable()

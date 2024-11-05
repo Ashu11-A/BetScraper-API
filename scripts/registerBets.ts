@@ -1,11 +1,9 @@
-import Database from '@/database/dataSource.js'
 import Bet from '@/database/entity/Bet.js'
+import { Cron } from '@/database/entity/Cron.js'
 import { parse } from 'csv'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { BetsDataset } from './types/dataset.js'
-
-await Database.initialize()
 
 const datasetPath = join(process.cwd(), 'dataset/18-10-24.csv')
 const dataset = await readFile(datasetPath, { encoding: 'utf-8' })
@@ -29,29 +27,47 @@ const formatURL = (url: string) => {
   }
   return url
 }
-const existsBy = async (url: string) => await Bet.existsBy({ url })
-const register = async (name: string, url: string) => {
-  if (!(await existsBy(url))) {
-    await Bet.create({ name, url }).save()
+
+export async function registerBets() {
+  const getCron = async () => {
+    const cron = await Cron.findOneBy({ expression: '25 16 * * *' })
+    if (cron === null) {
+      return await Cron.create({ expression: '25 16 * * *' }).save()
+    }
+    return cron
   }
+  
+  const existsBy = async (url: string) => await Bet.existsBy({ url })
+  const register = async (name: string, url: string) => {
+    if (!(await existsBy(url))) {
+      await Bet.create({
+        name,
+        url,
+        cron
+      }).save()
+    }
+  }
+
+  const cron = await getCron()
+  return new Promise<boolean>((resolve, reject) => {
+    parse(dataset, {
+      delimiter: ',',
+      columns: headers,
+      fromLine: 2,
+      cast: (columnValue, context) => {
+        if (['true', 'false'].includes(columnValue)) return Boolean(columnValue)
+        if (context.column === 'Número') return Number(columnValue)
+        return columnValue
+      }
+    }, async (error, result: BetsDataset[]) => {
+      if (error) reject(error)
+      const process: Array<Promise<void>> = []
+    
+      for (const bet of result) {
+        process.push(register(bet.Marcas, formatURL(bet.Domínios)))
+      }
+      await Promise.all(process)
+      resolve(true)
+    })
+  })
 }
-
-parse(dataset, {
-  delimiter: ',',
-  columns: headers,
-  fromLine: 2,
-  cast: (columnValue, context) => {
-    if (['true', 'false'].includes(columnValue)) return Boolean(columnValue)
-    if (context.column === 'Número') return Number(columnValue)
-    return columnValue
-  }
-}, async (error, result: BetsDataset[]) => {
-  if (error) throw error
-  const process: Array<Promise<void>> = []
-
-  for (const bet of result) {
-    process.push(register(bet.Marcas, formatURL(bet.Domínios)))
-  }
-  await Promise.all(process)
-  await Database.destroy()
-})

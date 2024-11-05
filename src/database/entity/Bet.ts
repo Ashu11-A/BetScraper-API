@@ -1,4 +1,5 @@
-import { BaseEntity, Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn, type Relation } from 'typeorm'
+import { BaseEntity, Column, CreateDateColumn, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn, type Relation } from 'typeorm'
+import { Cron } from './Cron.js'
 import { Task } from './Task.js'
 
 export enum BetStatusEnum {
@@ -29,6 +30,8 @@ export default class Bet extends BaseEntity {
 
   @OneToMany(() => Task, (task) => task.bet)
     tasks!: Relation<Task[]>
+  @ManyToOne(() => Cron, (cron) => cron.expression, { nullable: true, cascade: true })
+    cron?: Relation<Cron>
 
   @UpdateDateColumn()
     updatedAt!: Date

@@ -140,11 +140,42 @@ export class BetQueue {
     })
   }
 
-  static removeAllRepeatable = async (): Promise<void> => {
+  static async checkAllCrons() {
+    const queue = BetQueue.queue
+    const newQueue =  new BetQueue()
+    const jobs = await queue.getRepeatableJobs()
+    const process: Array<Promise<void>> = []
+  
+    for (const job of jobs) {
+      if (job.id === undefined) continue
+
+      process.push(
+        (async () => {
+          const bet = await Bet.findOneBy({ id: Number(job.id) })
+          if (bet === null) return
+  
+          const cron = await Cron.findOneBy({ bets: { id: bet.id } })
+          if (cron === null) return
+  
+          if (job.cron !== cron.expression) {
+            console.log(chalk.red(`[${bet.name}] Teve o cron alterado`))
+            // await queue.job
+            await queue.removeRepeatableByKey(job.key)
+            await newQueue.addToQueue({ bet, cron })
+          }
+        })()
+      )
+    }
+  
+    await Promise.all(process)
+  }
+  
+
+  static async removeAllRepeatable () {
     const queue = BetQueue.queue
     const jobs = await queue.getRepeatableJobs()
-    for (let i = 0; i < jobs.length; i++) {
-      const job = jobs[i]
+  
+    for (const job of jobs) {
       await queue.removeRepeatable({ cron: job.cron, jobId: job.id })
     }
   }

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { parseExpression } from 'cron-parser'
 import { paginate, paginateSchema } from '@/database/pagination.js'
 import { cronRepository } from '@/database/index.js'
+import { BetQueue } from '@/queues/BetQueue.js'
 
 const createSchema = z.object({
   expression: z.string().refine((value) => {
@@ -117,6 +118,8 @@ export default new Router({
               message: 'Cron not found or no changes made.' 
             })
           }
+
+          await BetQueue.checkAllCrons()
 
           return reply.code(200).send({
             message: 'Cron schedule updated successfully.',

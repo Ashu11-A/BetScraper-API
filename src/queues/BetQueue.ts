@@ -5,10 +5,11 @@ import Compliance from '@/database/entity/Compliance.js'
 import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
-import { Scraper } from '@/lib/scraper.js'
-import { DoneCallback, Job } from 'bull'
+import { Scraper } from '@/scraper/search.js'
+import { DoneCallback, Job, JobOptions } from 'bull'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
+import chalk from 'chalk'
 
 export type AddBetQueue = {
   bet: Bet,
@@ -16,7 +17,13 @@ export type AddBetQueue = {
   cron?: Cron
 }
 export type BetQueueType = {
+  bet: Bet
+  task?: Task
+}
+
+export type BetResult = {
   task: Task
+  compliances: number[]
 }
 
 export class BetQueue {
@@ -27,20 +34,23 @@ export class BetQueue {
   }
 
   async addToQueue({ bet, user, cron }: AddBetQueue) {
-    const task = await Task.create({
-      bet,
-      user,
-      status: 'scheduled',
-    }).save()
-    
-    BetQueue.queue.add({ task })
-    const queue = BetQueue.queue.add({ task }, {
-      jobId: cron !== undefined ? task.bet.id : undefined,
-      repeat: cron !== undefined ? { cron: cron.expression,  } : undefined,
+    const options = {
+      jobId: cron !== undefined ? bet.id : undefined,
+      repeat: cron !== undefined ? { cron: cron.expression } : undefined,
       removeOnComplete: cron === undefined ? true : false,
       removeOnFail: cron === undefined ? true : false
-    })
-    return queue
+    } satisfies JobOptions
+
+    if (user) {
+      const task = await Task.create({
+        bet,
+        user,
+        status: 'scheduled',
+      }).save()
+      return await BetQueue.queue.add({ bet, task }, options)
+    }
+    
+    return await BetQueue.queue.add({ bet }, options)
   }
 
   static initialize() {
@@ -50,10 +60,19 @@ export class BetQueue {
     BetQueue.queue.on('active', this.onActive)
     BetQueue.queue.on('paused', this.onPaused)
     BetQueue.queue.on('failed', this.onFailed)
+    BetQueue.queue.on('waiting', (jobId) => console.log(chalk.red(`Task: ${jobId} está esperando`)))
+    BetQueue.queue.on('removed', (job) => console.log(chalk.red(`Task: ${job.data.bet.name} foi removido`)))
   }
 
   static async process(job: Job<BetQueueType>, done: DoneCallback) {
-    const saveDir = join(storagePath, `/tasks/${job.data.task.id}/bets/${job.data.task.bet.id}/${job.data.task.createdAt}`)
+    const task = job.data.task !== undefined
+      ? await Task.findOneBy({ id: job.data.task.id })
+      : await Task.create({ bet: job.data.bet, status: 'scheduled' }).save()
+    if (task === null) {
+      console.log('Task is undefined')
+      return
+    }
+    const saveDir = join(storagePath, `/tasks/${task.id}/bets/${task.bet.id}/${task.createdAt}`)
     await mkdir(saveDir, { recursive: true })
     try {
       console.log(`Starting Job ID: ${job.id}`)
@@ -61,7 +80,7 @@ export class BetQueue {
       const keywords = compliance.map((compliance) => compliance.value)
       if (keywords.length === 0) throw new Error('No compliances recorded in the database')
 
-      const scraper = new Scraper(job.data.task.bet.url, keywords)
+      const scraper = new Scraper(task.bet.url, keywords)
       await scraper.loadPage()
       await scraper.savePageContent(saveDir)
       const initImage = await scraper.getScreenshotHomePage()
@@ -69,14 +88,15 @@ export class BetQueue {
       const compliancesFound = await scraper.filter()
 
       if (compliancesFound.length > 0) {
-        await scraper.closePopUp()
+        // await scraper.closePopUp()
         const screenshots = await scraper.getScreenshots()
         const filteredScreenshots = await scraper.filterScreenshots(screenshots)
+        console.log(await scraper.getProprieties())
   
         await writeFile(join(saveDir, '/initial.png'), initImage)
-        for (const [number, evidence] of Object.entries(filteredScreenshots)) {
-          await writeFile(join(saveDir, `/${number}.png`), evidence.print)
-        }
+        // for (const [number, evidence] of Object.entries(filteredScreenshots)) {
+        //   await writeFile(join(saveDir, `/${number}.png`), evidence.print)
+        // }
 
         const jsonData = filteredScreenshots.map((evidence, index) => ({
           ...evidence,
@@ -91,6 +111,7 @@ export class BetQueue {
 
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       done(null, {
+        task,
         compliances: compliance.filter((compliance) => compliancesFound.includes(compliance.value))
           .map((compliance) => compliance.id)
       })
@@ -100,9 +121,15 @@ export class BetQueue {
     }
   }
 
-  static async onCompleted(job: Job<BetQueueType>, result: { compliances: number[] }) {
+  static async onCompleted(job: Job<BetQueueType>, result: BetResult) {
     console.error(`Job ID ${job.id} completado.`)
-    const task = await Task.findOneByOrFail({ id: job.data.task.id })
+    const task = job.data.task !== undefined
+      ? await Task.findOneByOrFail({ id: job.data.task.id })
+      : await Task.findOneByOrFail({ bet: { id: job.data.bet.id } })
+    if (task === null) {
+      console.log('Task is undefined')
+      return
+    }
     const compliances = (
       await Promise.all(result.compliances.map((id) => Compliance.findOneBy({ id })))
     ).filter((compliance) => compliance !== null)
@@ -117,7 +144,8 @@ export class BetQueue {
 
   static async onActive(job: Job<BetQueueType>) {
     console.error(`Job ID ${job.id} ativado.`)
-    await Task.update({ id: job.data.task.id }, {
+    const task = await Task.findOneByOrFail({ bet: { id: job.data.bet.id } })
+    await Task.update({ id: task.id }, {
       status: 'running',
       scheduledAt: new Date()
     })
@@ -125,16 +153,18 @@ export class BetQueue {
 
   static async onPaused(job: Job<BetQueueType>) {
     console.error(`Job ID ${job.id} pausado.`)
+    const task = await Task.findOneByOrFail({ bet: { id: job.data.bet.id } })
 
-    await Task.update({ id: job.data.task.id }, {
+    await Task.update({ id: task.id }, {
       status: 'paused'
     })
   }
 
   static async onFailed(job: Job<BetQueueType>, error: Error) {
     console.error(`Job ID ${job.id} falhou:`, error.message)
+    const task = await Task.findOneByOrFail({ bet: { id: job.data.bet.id } })
 
-    await Task.update({ id: job.data.task.id }, {
+    await Task.update({ id: task.id }, {
       status: 'failed',
       errorMessage: error.message
     })

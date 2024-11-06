@@ -30,9 +30,9 @@ const formatURL = (url: string) => {
 
 export async function registerBets() {
   const getCron = async () => {
-    const cron = await Cron.findOneBy({ expression: '25 16 * * *' })
+    const cron = await Cron.findOneBy({ expression: '0 */3 * * *' })
     if (cron === null) {
-      return await Cron.create({ expression: '25 16 * * *' }).save()
+      return await Cron.create({ expression: '0 */3 * * *' }).save()
     }
     return cron
   }

@@ -22,6 +22,10 @@ export type BetQueueType = {
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
 
+  constructor() {
+    BetQueue.initialize()
+  }
+
   async addToQueue({ bet, user, cron }: AddBetQueue) {
     const task = await Task.create({
       bet,

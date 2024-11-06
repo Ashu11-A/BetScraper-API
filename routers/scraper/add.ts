@@ -45,7 +45,7 @@ export default new Router({
           if (!betRecord) return reply.code(404).send({ message: 'Bet not found.' })
           if (!userRecord && !cronRecord) return reply.code(404).send({ message: 'User and Cron are undefined, at least one must be specified' })
 
-          const queueTask = await BetQueue.addToQueue({
+          const queueTask = await new BetQueue().addToQueue({
             bet: betRecord,
             user: userRecord || undefined,
             cron: cronRecord || undefined,

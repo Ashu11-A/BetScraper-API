@@ -27,7 +27,7 @@ await registerCompliances()
 await registerBets()
 await registerScheduled()
 
-console.log(await BetQueue.queue.getRepeatableJobs())
+// console.log((await BetQueue.queue.getJobs([])))
 
 // await Database.dropDatabase()
 // await BetQueue.removeAllRepeatable()

@@ -15,7 +15,6 @@ export async function registerScheduled () {
     if (!isScheduled) {
       console.log(`Adicionando na Fila: ${bet.name}`)
       new BetQueue().addToQueue({ bet, cron: bet.cron })
-      await new Promise((resolve) => setTimeout(() => resolve(true), 15000))
     }
   }
   // await Promise.all(process)

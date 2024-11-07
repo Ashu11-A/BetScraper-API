@@ -69,6 +69,7 @@
     "csv": "^6.3.10",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
+    "excel4node": "^1.8.2",
     "fastify": "4.28.1",
     "glob": "11.0.0",
     "jsonwebtoken": "^9.0.2",

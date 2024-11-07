@@ -28,6 +28,7 @@ export type BetResult = {
 
 export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
+  static initialized = false
 
   constructor() {
     BetQueue.initialize()
@@ -54,7 +55,9 @@ export class BetQueue {
   }
 
   static initialize() {
+    if (BetQueue.initialized) return
     console.log('Initialize')
+    BetQueue.initialized = true
     BetQueue.queue.process(this.process)
     BetQueue.queue.on('completed', this.onCompleted)
     BetQueue.queue.on('active', this.onActive)
@@ -83,7 +86,7 @@ export class BetQueue {
       const scraper = new Scraper(task.bet.url, keywords)
       await scraper.loadPage()
       await scraper.savePageContent(saveDir)
-      const initImage = await scraper.getScreenshotHomePage()
+      const initImage = await scraper.getScreenshot()
       await scraper.scan()
       const compliancesFound = await scraper.filter()
 

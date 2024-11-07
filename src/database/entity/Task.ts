@@ -1,7 +1,8 @@
-import { BaseEntity, Column, CreateDateColumn, Entity, Generated, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation, UpdateDateColumn } from 'typeorm'
+import { BaseEntity, Column, CreateDateColumn, Entity, JoinTable, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation, UpdateDateColumn } from 'typeorm'
 import Bet from './Bet.js'
 import Compliance from './Compliance.js'
 import { User } from './User.js'
+import { Property } from './Property.js'
 
 enum StatusTask {
   Scheduled = 'scheduled',
@@ -15,13 +16,15 @@ enum StatusTask {
 export class Task extends BaseEntity {
   @PrimaryGeneratedColumn()
     id!: number
-  @Generated('uuid')
+  @Column({ type: 'text' })
     uuid!: string
 
-  @ManyToOne(() => Bet, (bet) => bet.tasks, { cascade: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Bet, (bet) => bet.tasks)
     bet!: Relation<Bet>
-  @ManyToOne(() => User, (user) => user.tasks, { nullable: true, cascade: true })
+  @ManyToOne(() => User, (user) => user.tasks, { nullable: true })
     user?: Relation<User>
+  @OneToMany(() => Property, (property) => property.task, { nullable: true})
+    properties?: Relation<Property[]>
   @ManyToMany(() => Compliance)
   @JoinTable()
     compliances!: Relation<Compliance[]>

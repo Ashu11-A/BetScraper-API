@@ -1,6 +1,5 @@
 import { BaseEntity, Column, CreateDateColumn, Entity, Generated, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn, type Relation } from 'typeorm'
 import Bet from './Bet.js'
-import { Task } from './Task.js'
 
 @Entity({ name: 'crons' })
 export class Cron extends BaseEntity {
@@ -13,7 +12,7 @@ export class Cron extends BaseEntity {
     expression!: string
   
   @OneToMany(() => Bet, (bet) => bet.cron)
-    bets!: Relation<Task[]>
+    bets!: Relation<Bet[]>
 
   @Column('timestamp', { nullable: true })
     lastExecutedAt?: Date

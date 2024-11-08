@@ -15,7 +15,7 @@ export async function findBackgroundColor(element: ElementHandle): Promise<strin
   
     if (
       backgroundColor &&
-        !/^rgba?\(0,\s*0,\s*0(?:,\s*0)?\)$/.test(backgroundColor) &&
+        !/rgba\(0, 0, 0, 0\)/g.test(backgroundColor) &&
         backgroundColor !== 'transparent'
     ) {
       return backgroundColor
@@ -24,5 +24,5 @@ export async function findBackgroundColor(element: ElementHandle): Promise<strin
     // Move para o elemento pai
     currentElement = await currentElement.getProperty('parentNode') as ElementHandle
   }
-  return 'transparent'
+  return 'rgb(0, 0, 0)'
 }

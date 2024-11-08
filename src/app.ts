@@ -16,7 +16,7 @@ execSync('bun run migration:run || true', { stdio: 'inherit' })
 const fastify = new Fastify({ port: 3000, host: '0.0.0.0' })
 await Database.initialize()
 BetQueue.initialize()
-await BetQueue.removeAllRepeatable()
+// await BetQueue.removeAllRepeatable()
 
 fastify.init()
 await Router.register()

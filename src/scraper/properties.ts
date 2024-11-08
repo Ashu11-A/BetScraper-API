@@ -1,7 +1,7 @@
 import { Viewport } from 'puppeteer'
 
 export class Properties {
-  textContent: string
+  content: string
   /**
    * Contranste feito com base na ISO-9241-3 e ANSI-HFES-100-1988
    * 
@@ -10,8 +10,8 @@ export class Properties {
    * @type {number}
    */
   contrast: number
-  proportion: number
   scrollPercentage: number
+  proportionPercentage: number
   
   isHidden: boolean
   isVisible: boolean
@@ -29,8 +29,16 @@ export class Properties {
    */
   isIntersectingViewport: boolean
   
-  color: string
-  backgroundColor: string
+  colors: {
+    text: {
+      value: string
+      color: [number, number, number]
+    }
+    backgroundColor: {
+      value: string
+      color: [number, number, number]
+    }
+  }
 
   viewport: Viewport
   
@@ -40,32 +48,30 @@ export class Properties {
   distanceToTop: number
     
   constructor({
-    color,
+    colors,
+    content,
     contrast,
     viewport,
     isHidden,
     isVisible,
     isInViewport,
-    proportion,
-    textContent,
+    proportionPercentage,
     distanceToTop,
     hasChildNodes,
-    backgroundColor,
     scrollPercentage,
     isIntersectingViewport,
   }: Properties) {
-    this.color = color
+    this.colors = colors
+    this.content = content
     this.contrast = contrast
     this.viewport = viewport
     this.isHidden = isHidden
     this.isVisible = isVisible
-    this.proportion = proportion
-    this.textContent = textContent
     this.isInViewport = isInViewport
     this.distanceToTop = distanceToTop
     this.hasChildNodes = hasChildNodes
-    this.backgroundColor = backgroundColor
     this.scrollPercentage = scrollPercentage
+    this.proportionPercentage = proportionPercentage
     this.isIntersectingViewport = isIntersectingViewport
   }
 }

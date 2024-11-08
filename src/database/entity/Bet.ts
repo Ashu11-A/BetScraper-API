@@ -30,7 +30,7 @@ export default class Bet extends BaseEntity {
 
   @OneToMany(() => Task, (task) => task.bet)
     tasks!: Relation<Task[]>
-  @ManyToOne(() => Cron, (cron) => cron.expression, { nullable: true, cascade: true })
+  @ManyToOne(() => Cron, (cron) => cron.bets, { nullable: true, cascade: true })
     cron?: Relation<Cron>
 
   @UpdateDateColumn()

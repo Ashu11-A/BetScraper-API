@@ -6,16 +6,20 @@ export async function registerScheduled () {
   const bets = await Bet.find({
     relations: ['cron']
   })
-    
-  // const process: Promise<Job<BetQueueType>>[] = []
-    
-  for (const bet of bets) {
-    const isScheduled = betsInScheduled.some((betScheduled) => Number(betScheduled?.id) === bet.id)
+
+  await Promise.all(bets.map(async (bet) => {
+    const isScheduled = betsInScheduled.some((betScheduled) => {
+      const [betIdStr, idTask] = String(betScheduled.id).split('-')
+      const betId = Number(betIdStr)
+      if (Number.isNaN(betId)) return
+      if (typeof idTask === 'string' && idTask === '') return
+  
+      return betId === bet.id
+    })
     
     if (!isScheduled) {
       console.log(`Adicionando na Fila: ${bet.name}`)
-      new BetQueue().addToQueue({ bet, cron: bet.cron })
+      await new BetQueue().addToQueue({ bet, cron: bet.cron })
     }
-  }
-  // await Promise.all(process)
+  }))
 }

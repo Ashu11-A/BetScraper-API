@@ -25,6 +25,7 @@ export class Scraper {
   constructor(public readonly url: string, public readonly keywords: string[]) { }
 
   async loadPage() {
+    console.log(chalk.yellow(`Bet: ${this.url} entrou na fila de processamento`))
     this.browser = await puppeteer.launch({
       // headless: false,
       args: [
@@ -70,8 +71,6 @@ export class Scraper {
     //   const url = response.url()
 
     //   if (response.request().resourceType() === 'image') {
-    //     console.log(tmpdir())
-    //     const dirname = join(tmpdir(), this.url)
     //     const file = await response.buffer()
     //     const fileName = url.split('/').pop()
 
@@ -79,12 +78,11 @@ export class Scraper {
     //       console.log(`Esse link não há o nome da imagem: ${url}`)
     //       return
     //     }
-    //     if(!fileName.endsWith('.png')) return
+    //     if(!['png', 'jpeg', 'jpg'].some((format) => fileName.endsWith(format))) return
+    //     console.log(`⬇️ Fazendo o Download: ${url}`)
 
-    //     const filePath = resolve(dirname, fileName)
-    //     const writeStream = createWriteStream(filePath)
-
-    //     writeStream.write(file)
+    //     const filePath = resolve(tmpdir(), fileName)
+    //     await writeFile(filePath, file)
     //   }
     // })
 
@@ -113,6 +111,7 @@ export class Scraper {
    * @private
    */
   private disableNavigation() {
+    console.log(chalk.yellow(`Bet: ${this.url} navegação disabilitado`))
     const page = this.page
     if (page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
@@ -163,9 +162,11 @@ export class Scraper {
    * @returns {Promise<this>}
    */
   async scan(): Promise<this> {
+    console.log(chalk.yellow(`Bet: ${this.url} scaneando elementos`))
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
     this.elements = await this.page.$$('*')
+    console.log(chalk.yellow(`Bet: ${this.url} ${this.elements.length} elementos foram encontrados`))
     return this
   }
 
@@ -177,11 +178,6 @@ export class Scraper {
    * @returns {Promise<string[]>} - Retorna uma lista de keywords encontradas nos elementos.
    */
   async filter(): Promise<string[]> {
-    if (this.elements.length === 0) {
-      await this.page?.close()
-      throw new Error('Execute scan function first')
-    }
-
     const stringsFound = new Set<string>()
 
     const filteredElements = (
@@ -211,6 +207,7 @@ export class Scraper {
     ).filter((element) => element !== null) // Filtrar elementos não nulos
 
     this.elements = filteredElements
+    console.log(chalk.yellow(`Bet: ${this.url} ${this.elements.length} elementos restantes depois da filtragem`))
     return Array.from(stringsFound) // Retorna keywords encontradas
   }
 
@@ -221,10 +218,16 @@ export class Scraper {
    * @async
    * @returns {Promise<Uint8Array>}
    */
-  async getScreenshot(): Promise<Uint8Array> {
+  async getScreenshot(): Promise<Uint8Array | undefined> {
     if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
-    return await this.page.screenshot()
+    console.log(chalk.yellow(`Bet: ${this.url} fazendo screenshot da pagina inicial`))
+    try {
+      return await this.page.screenshot()
+    } catch (err) {
+      console.log(err)
+      return
+    }
   }
 
   /**
@@ -234,22 +237,26 @@ export class Scraper {
    * @async
    * @returns {Promise<Properties[]>}
    */
-  async getProprieties(): Promise<Properties[]> {
-    if (this.elements.length === 0 || this.page === undefined) {
-      await this.page?.close()
+  async getProprieties(): Promise<{ properties: Properties[], elements: ElementHandle<Element>[] }> {
+    if (this.page === undefined) {
       throw new Error('variable elements is empty or page not initialized')
     }
+    console.log(chalk.yellow(`Bet: ${this.url} pegando propriedades dos ${this.elements.length} elementos`))
     
     const properties: Properties[] = []
+    const elements: ElementHandle<Element>[] = []
     
     for await (const element of this.elements) {
-      if (element.asElement() === null) continue
+      if (!element.asElement()) continue
       
-      const box = await element.boxModel()
-      if (box === null) continue
-
       const textContent = await element.evaluate((el) => el.textContent)
-      if (textContent === null) continue
+      if (!textContent) continue
+
+      await element.evaluate((el) => el.textContent)
+
+      const box = await element.boxModel()
+      if (!box) continue
+
       
       const viewport = this.page.viewport()
       if (!viewport) continue
@@ -262,26 +269,12 @@ export class Scraper {
         }, element)
       })()
       
-      const isInViewport = (distanceToTop <= viewport.height)
-      const color = await element.evaluate((el) => {
-        const style = window.getComputedStyle(el)
-        return {
-          color: style.color,
-          backgroundColor: style.backgroundColor,
-        }
-      })
-  
-      const backgroundColor = (/^rgba?\(0,\s*0,\s*0,\s*0\)$/.test(color.backgroundColor) || color.backgroundColor === 'transparent')
-        ? await findBackgroundColor(element)
-        : color.backgroundColor
-  
-      const contrastRatio = (() => {
-        const [r1, g1, b1] = parseRGB(color.color)
-        const [r2, g2, b2] = parseRGB(backgroundColor)
-        return calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
-      })()
+      const textColor = await element.evaluate(async (el) => window.getComputedStyle(el).color)
+      const backgroundColor =  await findBackgroundColor(element)
+      const [r2, g2, b2] = parseRGB(backgroundColor)
+      const [r1, g1, b1] = parseRGB(textColor, [r2, g2, b2])
+      const contrastRatio = calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
     
-      const hasChildNodes = (await element.$$('*')).length > 0
       // Obter a altura total da página
       const pageDimensions = await this.page.evaluate(() => {
         const width = Math.max(
@@ -302,48 +295,63 @@ export class Scraper {
       
         return { width, height }
       })
-      
-      const scrollPercentage = (distanceToTop / pageDimensions.height) * 100
+  
+      const isInViewport = (distanceToTop <= viewport.height)
+      const hasChildNodes = (await element.$$('*')).length > 0
+      // Pode aumentar a imprecisão
+      if (hasChildNodes) continue
 
       properties.push(new Properties({
-        textContent,
-        scrollPercentage,
+        content: textContent,
         contrast: contrastRatio,
-        proportion: calculateProportion(box.width, viewport.width),
-      
+        proportionPercentage: calculateProportion(box.width, viewport.width),
+        scrollPercentage: calculateProportion(distanceToTop, pageDimensions.height),
+        colors: {
+          text: {
+            value: textColor,
+            color: [r1, g1, b1]
+          },
+          backgroundColor: {
+            value: backgroundColor,
+            color: [r2, g2, b2]
+          }
+        },
+
         isIntersectingViewport: await element.isIntersectingViewport(),
         isVisible: await element.isVisible(),
         isHidden: await element.isHidden(),
         hasChildNodes,
         isInViewport,
-      
-        backgroundColor,
-        color: color.color,
 
         distanceToTop,
         viewport,
       }))
+      elements.push(element)
     }
   
-    return properties
+    return {
+      properties,
+      elements
+    }
   }
 
-  async getScreenshots(): Promise<Screenshot[]> {
-    if (this.elements.length === 0) {
-      await this.page?.close()
-      throw new Error('Variable elements is empty')
-    }
-    const screenshots: Screenshot[] = []
+  async getScreenshots(elements?: ElementHandle<Element>[]): Promise<Map<number, Screenshot>> {
+    elements = elements ?? this.elements
+    const screenshots = new Map<number, Screenshot>()
+    console.log(chalk.yellow(`Bet: ${this.url} fazendo a screenshot dos ${elements.length} elementos`))
 
-    for (const element of this.elements) {
+    for (const [index, element] of Object.entries(elements)) {
       if (element.asElement() === null) continue
       try {
         // 500 KB em bytes
+        const box = await element.boundingBox()
+        if (box === null || (box && box.width === 0 && box.height === 0)) continue
+
         const sizeInBytes = 500 * 1024
         const image = await element.screenshot({ captureBeyondViewport: false })
         if (image.byteLength > sizeInBytes) continue
 
-        screenshots.push(new Screenshot(image))
+        screenshots.set(Number(index), new Screenshot(image))
       } catch (err) {
         console.log(err)
       }
@@ -360,20 +368,21 @@ export class Scraper {
    * @param {Screenshot[]} screenshots
    * @returns {Promise<Screenshot[]>}
    */
-  async filterScreenshots(screenshots: Screenshot[]): Promise<Screenshot[]> {
-    const filteredScreenshot: Screenshot[] = []
+  async filterScreenshots(screenshots: Map<number, Screenshot>): Promise<Map<number, Screenshot>> {
+    const filteredScreenshot = new Map<number, Screenshot>()
+    console.log(chalk.yellow(`Bet: ${this.url} filtrado as ${screenshots.size} screenshots`))
 
-    for (const screenshot of screenshots) {
+    for (const [index, screenshot] of screenshots) {
       try {
         // Salva o buffer como arquivo temporário
         const tempImagePath = join(tmpdir(), `temp-image-${Date.now()}.png`)
-        await writeFile(tempImagePath, await screenshot.grayscale())
+        await writeFile(tempImagePath, await screenshot.greyscale().gaussian().toBuffer())
 
         // Realiza OCR na imagem temporária
         const { data } = await woker.recognize(tempImagePath, {}, { text: true })
         const imgText = data.text
         const criterias = new Criteria({}).setCriterias(imgText)
-        if (criterias.hasIrregularity) filteredScreenshot.push(new Screenshot(screenshot.image))
+        if (criterias.hasIrregularity) filteredScreenshot.set(Number(index), new Screenshot(screenshot.image))
 
         const countKeywords = this.keywords.filter(keyword => data.text.includes(keyword)).length
         console.log(chalk.red(`${countKeywords} palavras/frases foram encontradas na pagina: ${this.url}`))
@@ -382,6 +391,7 @@ export class Scraper {
       }
     }
 
+    console.log(chalk.yellow(`Bet: ${this.url} ${screenshots.size} screenshots depois da filtragem`))
     return filteredScreenshot
   }
 

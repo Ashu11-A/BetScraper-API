@@ -1,144 +1,115 @@
-import * as excel from 'excel4node'
-import { format } from 'date-fns'
+import { Style, Workbook, Worksheet } from 'exceljs'
+import { removeSpecialCharacters } from 'scripts/libs/parser.js'
 
-import { Infos } from '@/types/exporterInfos.js'
+export type Column = {
+  readonly header: string;
+  readonly key: string;
+};
 
-export class Exporter {
-  private workbook: excel.Workbook
-  private worksheet: excel.Worksheet
-  private headerStyle: excel.Style
-  private cellStyle: excel.Style
-  private advertencesList: string[]
-  private columns: string[]
+type ColumnData<T extends readonly Column[]> = {
+  [K in Extract<T[number]['key'], string>]?: string;
+};
+// Omitir todas as funções
+type OmitAllFunctions<T> = Pick<T, { 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in keyof T]: T[K] extends (...args: any[]) => any ? never : K 
+}[keyof T]>;
 
-  constructor(private data: { betName: string; betUrl: string; startDate: Date; endDate: Date; infos: Infos[] }[]) {
-    this.workbook = new excel.Workbook()
-    this.worksheet = this.workbook.addWorksheet('Relatório')
-    this.headerStyle = this.createHeaderStyle()
-    this.cellStyle = this.createCellStyle()
-    this.advertencesList = [
-      'símbolo "18+"',
-      'aviso "proibido para menores de 18 anos"',
-      'Jogue com responsabilidade',
-      'Apostas são atividades com riscos de perdas financeiras.',
-      'Apostar pode levar à perda de dinheiro.',
-      'As chances são de que você está prestes a perder',
-      'Aposta não é investimento.',
-      'Apostar pode causar dependência.',
-      'Apostas esportivas: pratique o jogo seguro.',
-      'Apostar não deixa ninguém rico.',
-      'Saiba quando apostar e quando parar.',
-      'Aposta é assunto para adultos.',
-    ]
-    this.columns = ['Nome da Bet', 'URL', 'Data de Início da análise', 'Data de Fim da análise']
+export class Exporter<C extends readonly Column[]> {
+  private workbook = new Workbook()
+  private worksheets = new Map<string, Worksheet>()
+  private worksheet!: Worksheet
+  public columns: C
+  public style: Style
+
+  constructor(options?: Partial<OmitAllFunctions<Exporter<C>>>) {
+    this.columns = (options as unknown as { columns: C })?.columns
+    this.style = options?.style as typeof this.style
   }
 
-  private createHeaderStyle(): excel.Style {
-    return this.workbook.createStyle({
-      font: {
-        bold: true,
-        color: '#FFFFFF',
-      },
-      alignment: {
-        horizontal: 'center',
-        vertical: 'center',
-      },
-      fill: {
-        type: 'pattern',
-        patternType: 'solid',
-        bgColor: '#4F81BD',
-        fgColor: '#4F81BD',
-      },
-      border: {
-        left: { style: 'thin' },
-        right: { style: 'thin' },
-        top: { style: 'thin' },
-        bottom: { style: 'thin' },
-      },
-    })
+  setStyle(style: Style) {
+    for (const column of this.worksheet.columns) {
+      column.style = style
+    }
+    return this
   }
 
-  private createCellStyle(): excel.Style {
-    return this.workbook.createStyle({
-      alignment: {
-        horizontal: 'left',
-        vertical: 'center',
-      },
-      border: {
-        left: { style: 'thin' },
-        right: { style: 'thin' },
-        top: { style: 'thin' },
-        bottom: { style: 'thin' },
-      },
-    })
+  addColumn(column: Partial<Column>) {
+    this.worksheet.columns = [...this.worksheet.columns, column]
+
+    return this
   }
 
-  private processCell(value: unknown): string | number {
-    if (value instanceof Date) {
-      return format(value, 'dd/MM/yyyy \'às\' HH:mm')
+  setColumns<T extends readonly Column[]>(columns: C | T, ignoreSort?: string[]) {
+    this.columns = columns as C
+
+    if (ignoreSort === undefined) {
+      this.worksheet.columns = [...columns]
+      return this
     }
 
-    if (typeof value === 'boolean') {
-      return value ? 'Sim' : 'Não'
-    }
+    const filteredHeader = [...columns].filter(item => !ignoreSort?.includes(item.header))
+    const excludeHeader = [...columns].filter(item => ignoreSort?.includes(item.header))
+    const sortedHeader = filteredHeader.toSorted((a, b) => a.header.localeCompare(b.header))
 
-    return (value ?? '-') as string | number
+    this.worksheet.columns = [...excludeHeader, ...sortedHeader]
+    return this
   }
 
-  private addHeader(columns: string[]): void {
-    let colIndex = 1
-    columns.forEach((col) => {
-      this.worksheet.cell(1, colIndex).string(col).style(this.headerStyle)
-      this.worksheet.column(colIndex).setWidth(35)
-      colIndex++
+  addRow<T extends readonly Column[] | undefined = undefined>(data: ColumnData<T extends undefined ? C : T>) {
+    this.worksheet.addRow({
+      ...data,
     })
 
-    this.advertencesList.forEach((advertence) => {
-      this.worksheet.cell(1, colIndex).string(advertence).style(this.headerStyle)
-      this.worksheet.column(colIndex).setWidth(35)
-      this.worksheet.cell(1, colIndex + 1).string(`${advertence} - Localização`).style(this.headerStyle)
-      this.worksheet.column(colIndex + 1).setWidth(35)
-      this.worksheet.cell(1, colIndex + 2).string(`${advertence} - Contraste`).style(this.headerStyle)
-      this.worksheet.column(colIndex + 2).setWidth(35)
-      this.worksheet.cell(1, colIndex + 3).string(`${advertence} - Render`).style(this.headerStyle)
-      this.worksheet.column(colIndex + 3).setWidth(35)
-      colIndex += 4
-    })
+    return this
   }
 
-  private addData(): void {
-    this.data.forEach((row, rowIndex) => {
-      const currentRow = rowIndex + 2
+  ajustColumn() {
+    const colCount = this.worksheet.columnCount // Número de colunas na planilha
 
-      this.worksheet.cell(currentRow, 1).string(row.betName).style(this.cellStyle)
-      this.worksheet.cell(currentRow, 2).string(row.betUrl).style(this.cellStyle)
-      this.worksheet.cell(currentRow, 3).string(this.processCell(row.startDate) as string).style(this.cellStyle)
-      this.worksheet.cell(currentRow, 4).string(this.processCell(row.endDate) as string).style(this.cellStyle)
-
-      const infosMap = new Map(row.infos.map((info) => [info.advertence, info]))
-
-      let infoColIndex = 5
-      this.advertencesList.forEach((advertence) => {
-        const info = infosMap.get(advertence)
-        this.worksheet.cell(currentRow, infoColIndex).string(this.processCell(info?.value ?? false) as string).style(this.cellStyle)
-        this.worksheet.cell(currentRow, infoColIndex + 1).string(info?.location ?? '-').style(this.cellStyle)
-        this.worksheet.cell(currentRow, infoColIndex + 2).string(info?.contrast ?? '-').style(this.cellStyle)
-        this.worksheet.cell(currentRow, infoColIndex + 3).string(info?.render ?? '-').style(this.cellStyle)
-        infoColIndex += 4
+    for (let colIndex = 1; colIndex <= colCount; colIndex++) {
+      let maxLength = 0
+  
+      // Percorre todas as células da coluna e encontra o maior comprimento de texto
+      this.worksheet.getColumn(colIndex).eachCell({ includeEmpty: true }, (cell) => {
+        const cellValue = cell.text || '' // Garantir que a célula tenha um valor de texto
+        if (cellValue.length > maxLength) {
+          maxLength = cellValue.length
+        }
       })
-    })
+  
+      // Define a largura da coluna com base no maior comprimento encontrado
+      this.worksheet.getColumn(colIndex).width = maxLength + 2 // Adiciona um pequeno valor para margem
+    }
+    return this
   }
 
-  public generate(): void {
-    this.addHeader(this.columns)
-    this.addData()
-    this.workbook.write(`bets-report-${format(new Date(), 'dd-MM-yyyy-HH-mm')}.xlsx`)
-  }
-}
+  createWorksheet(name: string) {
+    if (this.worksheets.has(name)) {
+      this.useWorkshet(name)
+      return this
+    }
 
-export function generateReport(
-  data: { betName: string; betUrl: string; startDate: Date; endDate: Date; infos: Infos[] }[]
-) {
-  const reportGenerator = new Exporter(data)
-  reportGenerator.generate()
+    const workseet = this.workbook.addWorksheet(removeSpecialCharacters(name))
+    this.worksheets.set(name, workseet)
+    this.worksheet = workseet
+
+    return this
+  }
+
+  useWorkshet(name: string) {
+    const workseet = this.worksheets.get(name)
+    if (workseet === undefined) throw new Error(`Not found Worksheet with name: ${name}`)
+    this.worksheet = workseet
+
+    return this
+  }
+
+  async toBuffer () {
+    return await this.workbook.xlsx.writeBuffer()
+  }
+
+  async toFile(filePath: string) {
+    await this.workbook.xlsx.writeFile(filePath)
+  }
 }

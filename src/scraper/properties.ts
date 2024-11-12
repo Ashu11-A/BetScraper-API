@@ -1,4 +1,4 @@
-import { Viewport } from 'puppeteer'
+import { BoxModel, Viewport } from 'puppeteer'
 
 export class Properties {
   content: string
@@ -41,11 +41,15 @@ export class Properties {
   }
 
   viewport: Viewport
-  
   /**
    * Localização do elemento
    */
   distanceToTop: number
+  elementBox: BoxModel
+  pageDimensions: {
+    width: number;
+    height: number;
+  }
     
   constructor({
     colors,
@@ -54,11 +58,13 @@ export class Properties {
     viewport,
     isHidden,
     isVisible,
+    elementBox,
     isInViewport,
-    proportionPercentage,
-    distanceToTop,
     hasChildNodes,
+    distanceToTop,
+    pageDimensions,
     scrollPercentage,
+    proportionPercentage,
     isIntersectingViewport,
   }: Properties) {
     this.colors = colors
@@ -67,9 +73,11 @@ export class Properties {
     this.viewport = viewport
     this.isHidden = isHidden
     this.isVisible = isVisible
+    this.elementBox = elementBox
     this.isInViewport = isInViewport
     this.distanceToTop = distanceToTop
     this.hasChildNodes = hasChildNodes
+    this.pageDimensions = pageDimensions
     this.scrollPercentage = scrollPercentage
     this.proportionPercentage = proportionPercentage
     this.isIntersectingViewport = isIntersectingViewport

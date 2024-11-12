@@ -15,6 +15,11 @@ execSync('bun run migration:run || true', { stdio: 'inherit' })
 
 const fastify = new Fastify({ port: 3000, host: '0.0.0.0' })
 await Database.initialize()
+await registerCrons()
+await registerCompliances()
+await registerBets()
+await registerScheduled()
+
 BetQueue.initialize()
 // await BetQueue.removeAllRepeatable()
 
@@ -22,10 +27,6 @@ fastify.init()
 await Router.register()
 fastify.listen()
 
-await registerCrons()
-await registerCompliances()
-await registerBets()
-await registerScheduled()
 await BetQueue.checkAllCrons()
 
 // console.log((await BetQueue.queue.getJobs([])))

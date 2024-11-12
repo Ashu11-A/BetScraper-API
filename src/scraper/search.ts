@@ -175,14 +175,16 @@ export class Scraper {
    * Usa as keywords para procurar os elementos que contêm as palavras de interesse.
    *
    * @async
-   * @returns {Promise<string[]>} - Retorna uma lista de keywords encontradas nos elementos.
+   * @param elements - Lista opcional de elementos para filtrar.
+   * @returns {Promise<string[]> | Promise<ElementHandle<Element>[]>} - Retorna uma lista de keywords encontradas ou os elementos filtrados.
    */
-  async filter(): Promise<string[]> {
+  async filter(elements?: ElementHandle<Element>[]): Promise<ElementHandle<Element>[]> {
+    elements = elements ?? this.elements
     const stringsFound = new Set<string>()
 
     const filteredElements = (
       await Promise.all(
-        this.elements.map(async (element) => {
+        (elements).map(async (element) => {
           const textContent = await element.evaluate(el => el.textContent)
           if (typeof textContent !== 'string') return null
 
@@ -195,39 +197,42 @@ export class Scraper {
             return false
           })
 
-          // Se encontrou keywords, verificar se tem filhos
-          if (hasKeywords) {
-            // Retornar o elemento apenas se não tiver filhos
-            // if (!((await element.$$('*')).length > 0)) 
-            return element
-          }
+          if (hasKeywords) return element
           return null
         })
       )
     ).filter((element) => element !== null) // Filtrar elementos não nulos
-
+  
     this.elements = filteredElements
-    console.log(chalk.yellow(`Bet: ${this.url} ${this.elements.length} elementos restantes depois da filtragem`))
-    return Array.from(stringsFound) // Retorna keywords encontradas
+    console.log(chalk.yellow(`Bet: ${this.url} ${elements.length} elementos restantes depois da filtragem`))
+
+    return filteredElements
   }
 
+  async find (elements?: ElementHandle<Element>[]): Promise<string[]> {
+    elements = elements ?? this.elements
+    const stringsFound = new Set<string>()
+  
+    await Promise.all(
+      (elements).map(async (element) => {
+        const textContent = await element.evaluate(el => el.textContent)
+        if (typeof textContent !== 'string') return null
 
-  /**
-   * Screenshot da tela rederizada atualmente
-   *
-   * @async
-   * @returns {Promise<Uint8Array>}
-   */
-  async getScreenshot(): Promise<Uint8Array | undefined> {
-    if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
+        // Verificar e coletar keywords encontradas
+        const hasKeywords = this.keywords.some((keyword) => {
+          if (textContent.includes(keyword)) {
+            stringsFound.add(keyword)
+            return true
+          }
+          return false
+        })
 
-    console.log(chalk.yellow(`Bet: ${this.url} fazendo screenshot da pagina inicial`))
-    try {
-      return await this.page.screenshot()
-    } catch (err) {
-      console.log(err)
-      return
-    }
+        if (hasKeywords) return element
+        return null
+      }))
+
+    console.log(chalk.yellow(`Bet: ${this.url} ${elements.length} strings encontradas`))
+    return Array.from(stringsFound) // Retorna keywords encontradas
   }
 
   /**
@@ -237,30 +242,46 @@ export class Scraper {
    * @async
    * @returns {Promise<Properties[]>}
    */
-  async getProprieties(): Promise<{ properties: Properties[], elements: ElementHandle<Element>[] }> {
-    if (this.page === undefined) {
-      throw new Error('variable elements is empty or page not initialized')
-    }
-    console.log(chalk.yellow(`Bet: ${this.url} pegando propriedades dos ${this.elements.length} elementos`))
+  async getProprieties(elementsData?: ElementHandle<Element>[]): Promise<{ properties: Properties[], elements: ElementHandle<Element>[] }> {
+    if (this.page === undefined) throw new Error('variable elements is empty or page not initialized')
+    console.log(chalk.yellow(`Bet: ${this.url} pegando propriedades dos ${(elementsData ?? this.elements).length} elementos`))
     
     const properties: Properties[] = []
     const elements: ElementHandle<Element>[] = []
     
-    for await (const element of this.elements) {
+    for await (const element of (elementsData ?? this.elements)) {
+      const text = await element.evaluate((el) => el.textContent)
+      if (!text || !this.keywords.includes(text)) continue
       if (!element.asElement()) continue
-      
-      const textContent = await element.evaluate((el) => el.textContent)
-      if (!textContent) continue
-
-      await element.evaluate((el) => el.textContent)
-
-      const box = await element.boxModel()
-      if (!box) continue
-
       
       const viewport = this.page.viewport()
       if (!viewport) continue
+
+      // Aumenta a precisão
+      const childrenHandle = await element.evaluateHandle(e => Array.from(e.children), element)
+      const children = await childrenHandle.getProperties()
+      const childElements = Array.from(children.values()) as ElementHandle<Element>[]
+      const hasChildNodes = childElements.length > 0
+      if (hasChildNodes) {
+        console.log(`Processando subprocesso: ${text}`)
+        const elementsChild = await this.filter(childElements)
+        const { elements: subElements, properties: subProperties } = await this.getProprieties(elementsChild)
     
+        Object.assign(properties, subProperties)
+        Object.assign(elements, subElements)
+        continue
+      }
+
+      // Converte para o tamanho real do elemento, sem ruido
+      const replaceValue = `${(await this.find([element])).join(', ')}`
+      await element.evaluate(async (el, replaceValue) => el.textContent = replaceValue, replaceValue)
+      const textContent = await element.evaluate((el) => el.textContent)
+      if (!textContent) continue
+  
+      const box = await element.boxModel()
+      if (!box) continue
+
+      // Distancia do elemento até o topo da pagina
       const distanceToTop = await (async () => {
         return await element.evaluate((el) => {
           const elementRect = el.getBoundingClientRect()
@@ -274,32 +295,9 @@ export class Scraper {
       const [r2, g2, b2] = parseRGB(backgroundColor)
       const [r1, g1, b1] = parseRGB(textColor, [r2, g2, b2])
       const contrastRatio = calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
-    
-      // Obter a altura total da página
-      const pageDimensions = await this.page.evaluate(() => {
-        const width = Math.max(
-          document.body.scrollWidth,
-          document.documentElement.scrollWidth,
-          document.body.offsetWidth,
-          document.documentElement.offsetWidth,
-          document.documentElement.clientWidth
-        )
-      
-        const height = Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.offsetHeight,
-          document.documentElement.clientHeight
-        )
-      
-        return { width, height }
-      })
-  
+
+      const pageDimensions = await this.getSize()
       const isInViewport = (distanceToTop <= viewport.height)
-      const hasChildNodes = (await element.$$('*')).length > 0
-      // Pode aumentar a imprecisão
-      if (hasChildNodes) continue
 
       properties.push(new Properties({
         content: textContent,
@@ -316,15 +314,17 @@ export class Scraper {
             color: [r2, g2, b2]
           }
         },
-
+        
         isIntersectingViewport: await element.isIntersectingViewport(),
         isVisible: await element.isVisible(),
         isHidden: await element.isHidden(),
         hasChildNodes,
         isInViewport,
-
+        
+        elementBox: box,
+        pageDimensions,
         distanceToTop,
-        viewport,
+        viewport
       }))
       elements.push(element)
     }
@@ -335,6 +335,56 @@ export class Scraper {
     }
   }
 
+  async getSize () {
+    const elements = await this.page!.$$('*') ?? []
+    let height = 0
+
+    const width = await this.page!.evaluate(() => Math.max(
+      document.body.scrollWidth,
+      document.documentElement.scrollWidth,
+      document.body.offsetWidth,
+      document.documentElement.offsetWidth,
+      document.documentElement.clientWidth
+    ))
+
+    for (const element of elements) {
+      const pageDimensions = await element.evaluate((el) => {
+        const height = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.offsetHeight,
+          document.documentElement.clientHeight,
+          el.scrollHeight,
+          el.clientHeight
+        )
+      
+        return { height }
+      })
+
+      if (pageDimensions.height > height) height = pageDimensions.height
+    }
+    return { width, height }
+  }
+
+  /**
+   * Screenshot da tela rederizada atualmente
+   *
+   * @async
+   * @returns {Promise<Uint8Array>}
+   */
+  async getScreenshot(): Promise<Uint8Array | undefined> {
+    if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
+  
+    console.log(chalk.yellow(`Bet: ${this.url} fazendo screenshot da pagina inicial`))
+    try {
+      return await this.page.screenshot()
+    } catch (err) {
+      console.log(err)
+      return
+    }
+  }
+  
   async getScreenshots(elements?: ElementHandle<Element>[]): Promise<Map<number, Screenshot>> {
     elements = elements ?? this.elements
     const screenshots = new Map<number, Screenshot>()

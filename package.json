@@ -52,7 +52,9 @@
     "tsc-alias": "^1.8.10",
     "tsup": "^8.3.5",
     "typescript": "^5.5.4",
-    "typescript-eslint": "^8.3.0"
+    "typescript-eslint": "^8.3.0",
+    "wrap-ansi": "7.0.0",
+    "string-width": "4.1.0"
   },
   "dependencies": {
     "@fastify/cookie": "9.4.0",
@@ -69,6 +71,7 @@
     "csv": "^6.3.10",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "fastify": "4.28.1",
     "glob": "11.0.0",
     "jsonwebtoken": "^9.0.2",

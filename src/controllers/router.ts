@@ -46,11 +46,11 @@ export class Router {
         path = path.replace(regexBrackets, '')
       }
       // Remove caracter com final com '/' ou '\'
-      path = path.replace(/[/\\]$/, "")
+      path = path.replace(/[/\\]$/, '')
       // Adiciona / no começo do path caso necessario
       path = join('/', path)
       // Substitui '\'' para '/'
-      path = path.replace(/\\/g, "/")
+      path = path.replace(/\\/g, '/')
       
       for (const method of router.options.method) {
         const auth = method.authenticate ? { preValidation: fastifyPassport.authenticate(method.authenticate) } : {}

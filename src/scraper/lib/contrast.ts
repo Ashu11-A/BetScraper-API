@@ -1,4 +1,9 @@
 function calculateLuminance(red: number, green: number, blue: number): number {
+  // Valida se os valores RGB estão dentro do intervalo correto
+  if (![red, green, blue].every(val => val >= 0 && val <= 255)) {
+    throw new Error('Os valores de cor devem estar entre 0 e 255.')
+  }
+
   const [normalizedRed, normalizedGreen, normalizedBlue] = [red, green, blue].map((colorValue) => {
     const normalizedValue = colorValue / 255
     return normalizedValue <= 0.03928
@@ -43,4 +48,3 @@ export function isContrastCompliant(
   }
   return false
 }
-    

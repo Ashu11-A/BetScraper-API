@@ -90,7 +90,7 @@ export class BetQueue {
       const initImage = await scraper.getScreenshot()
       await scraper.scan()
   
-      const compliancesFound = await scraper.filter()
+      const compliancesFound = await scraper.find()
 
       // await scraper.closePopUp()
       const { elements, properties } = await scraper.getProprieties()

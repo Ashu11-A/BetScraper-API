@@ -1,6 +1,7 @@
-import { type Viewport } from 'puppeteer'
+import { type BoxModel, type Viewport } from 'puppeteer'
 import { BaseEntity, Column, Entity, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
 import { Task } from './Task.js'
+import { Properties } from '@/scraper/properties.js'
 
 type Colors = {
   text: {
@@ -14,7 +15,7 @@ type Colors = {
 }
 
 @Entity({ name: 'properties' })
-export class Property extends BaseEntity {
+export class Property extends BaseEntity implements Properties {
     @PrimaryGeneratedColumn()
       id!: number
 
@@ -66,4 +67,26 @@ export class Property extends BaseEntity {
       }
     })
       viewport!: Viewport
+    @Column('simple-json', {
+      transformer: {
+        to(value: string): string {
+          return JSON.stringify(value)
+        },
+        from(value: string) {
+          return JSON.parse(value)
+        },
+      }
+    })
+      pageDimensions!: { width: number, height: number }
+    @Column('simple-json', {
+      transformer: {
+        to(value: string): string {
+          return JSON.stringify(value)
+        },
+        from(value: string) {
+          return JSON.parse(value)
+        },
+      }
+    })
+      elementBox!: BoxModel
 }

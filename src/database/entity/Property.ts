@@ -1,7 +1,8 @@
-import { type BoxModel, type Viewport } from 'puppeteer'
-import { BaseEntity, Column, Entity, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
-import { Task } from './Task.js'
 import { Properties } from '@/scraper/properties.js'
+import { type BoxModel, type Viewport } from 'puppeteer'
+import { BaseEntity, Column, Entity, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
+import Compliance from './Compliance.js'
+import { Task } from './Task.js'
 
 type Colors = {
   text: {
@@ -21,9 +22,9 @@ export class Property extends BaseEntity implements Properties {
 
     @ManyToOne(() => Task, (task) => task.properties)
       task!: Relation<Task>
-
-    @Column('text')
-      content!: string
+    @ManyToMany(() => Compliance)
+    @JoinTable()
+      compliances!: Relation<Compliance[]>
 
     @Column('float')
       contrast!: number

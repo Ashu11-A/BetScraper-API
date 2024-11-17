@@ -1,7 +1,8 @@
+import Compliance from '@/database/entity/Compliance.js'
 import { BoxModel, Viewport } from 'puppeteer'
 
 export class Properties {
-  content: string
+  compliances: Compliance[]
   /**
    * Contranste feito com base na ISO-9241-3 e ANSI-HFES-100-1988
    * 
@@ -53,12 +54,12 @@ export class Properties {
     
   constructor({
     colors,
-    content,
     contrast,
     viewport,
     isHidden,
     isVisible,
     elementBox,
+    compliances,
     isInViewport,
     hasChildNodes,
     distanceToTop,
@@ -68,12 +69,12 @@ export class Properties {
     isIntersectingViewport,
   }: Properties) {
     this.colors = colors
-    this.content = content
     this.contrast = contrast
     this.viewport = viewport
     this.isHidden = isHidden
     this.isVisible = isVisible
     this.elementBox = elementBox
+    this.compliances = compliances
     this.isInViewport = isInViewport
     this.distanceToTop = distanceToTop
     this.hasChildNodes = hasChildNodes

@@ -1,4 +1,4 @@
-import { BaseEntity, Column, Entity, PrimaryGeneratedColumn } from 'typeorm'
+import { BaseEntity, Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm'
 
 export enum ComplianceType {
   Bunus = 'bunus',
@@ -13,7 +13,11 @@ export default class Compliance extends BaseEntity {
 
   @Column({ type: 'text' })
     value!: string
-
   @Column({ type: 'enum', enum: ComplianceType })
     type!: ComplianceType
+
+  @UpdateDateColumn()
+    updatedAt!: number
+  @CreateDateColumn()
+    createdAt!: number
 }

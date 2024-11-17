@@ -3,47 +3,47 @@ import chalk from 'chalk'
 
 export async function findBackgroundColor(element: ElementHandle): Promise<string> {
   let currentElement = element
-  let accumulatedColor = [0, 0, 0, 0] // Representa RGBA, acumulando a transparência
+  let accumulatedColor = [0, 0, 0, 0] // Representa RGBA, iniciando como transparente
 
   console.log(chalk.blue('Iniciando a busca pela cor de fundo...'))
 
   while (currentElement) {
-    // Verifica se currentElement é um elemento do tipo `Element`
     const isElement = await currentElement.evaluate((el) => el instanceof Element)
-    if (!isElement) break // Se não for um `Element`, sai do loop
+    if (!isElement) break
 
     const backgroundColor = await currentElement.evaluate((el) => {
       const style = window.getComputedStyle(el)
       return style.backgroundColor
     })
-    
-    // Converte a cor de fundo para RGBA para manipular a transparência
+
     const rgba = parseRGB(backgroundColor)
-    if (rgba[3] === 1) {
-      // Cor completamente opaca, pode retornar
+
+    if (rgba[3] === 1 && !(rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0)) {
+      // Cor completamente opaca e não é totalmente transparente preta
       console.log(chalk.green(`Cor opaca encontrada: rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`))
       return `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`
-    } else {
-      // Cor parcialmente transparente, acumula para uma mistura
+    } else if (rgba[3] > 0) {
+      // Cor parcialmente transparente, acumula a mistura
       console.log(chalk.yellow(`Cor transparente encontrada: rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`))
       accumulatedColor = blendColorsRGBA([accumulatedColor[0], accumulatedColor[1], accumulatedColor[2], accumulatedColor[3]], rgba)
     }
-    // Move para o elemento pai
+
     currentElement = await currentElement.evaluateHandle((el) => el.parentElement) as ElementHandle
-    console.log(chalk.cyan('Subindo para o elemento pai...'))
+    console.log(chalk.cyan(`[${accumulatedColor.join(', ')}] Subindo para o elemento pai...`))
   }
 
   console.log(chalk.green(`Cor final encontrada após combinar com os elementos anteriores: rgba(${accumulatedColor[0]}, ${accumulatedColor[1]}, ${accumulatedColor[2]}, ${accumulatedColor[3]})`))
   return `rgba(${accumulatedColor[0]}, ${accumulatedColor[1]}, ${accumulatedColor[2]}, ${accumulatedColor[3]})`
 }
 
-// Função auxiliar para converter a cor em RGBA
-function parseRGB(color: string): [number, number, number, number] {
+// Função auxiliar para verificar e corrigir o parse de cores
+export function parseRGB(color: string): [number, number, number, number] {
   const rgba = color.match(/rgba?\((\d+), (\d+), (\d+)(?:, (\d+(\.\d+)?))?\)/)
-  if (!rgba) return [0, 0, 0, 1] // Cor padrão preta opaca
+  if (!rgba) return [0, 0, 0, 0] // Retorna transparente por padrão se não puder ser analisado corretamente
   const [r, g, b, a] = [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), rgba[4] ? parseFloat(rgba[4]) : 1]
   return [r, g, b, a]
 }
+
 
 // Função para calcular a mistura de cores RGBA considerando a transparência
 function blendColorsRGBA(foregroundColor: [number, number, number, number], backgroundColor: [number, number, number, number]): [number, number, number, number] {

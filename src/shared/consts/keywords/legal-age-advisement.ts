@@ -1,27 +1,4 @@
 export const legalAgeAdvisementKeywords = [
   '18+',
-  '🔞',
-  'Proibido para menores de 18 anos',
-  'Apenas para maiores de 18 anos',
-  'Somente maiores de 18',
-  'Idade mínima de 18 anos',
-  'Permitido apenas para maiores de 18',
-  'Maioridade obrigatória',
-  'Proibido para menores',
-  'Restrito para maiores de idade',
-  'Conteúdo para maiores de 18',
-  'Somente para adultos',
-  'Exclusivo para maiores de 18',
-  'Necessário ter 18 anos ou mais',
-  'Não permitido para menores de 18',
-  'Restrições para menores de 18',
-  'Conteúdo adulto, maiores de 18',
-  'Acesso restrito a maiores de 18 anos',
-  'Apenas 18 anos ou mais',
-  'Limite de idade: 18 anos',
-  'Proibido para menores de idade',
-  'Conteúdo proibido para menores',
-  'Permitido apenas para maiores',
-  'Exclusivo para adultos (18+)',
-  'Acesso somente para maiores de 18 anos'
+  'Proibido para menores de 18 anos'
 ]

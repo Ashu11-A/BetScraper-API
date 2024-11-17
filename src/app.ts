@@ -19,6 +19,7 @@ await registerCrons()
 await registerCompliances()
 await registerBets()
 await registerScheduled()
+// await Database.dropDatabase()
 
 BetQueue.initialize()
 // await BetQueue.removeAllRepeatable()
@@ -30,5 +31,3 @@ fastify.listen()
 await BetQueue.checkAllCrons()
 
 // console.log((await BetQueue.queue.getJobs([])))
-
-// await Database.dropDatabase()

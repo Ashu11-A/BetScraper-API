@@ -27,7 +27,7 @@ export type BetQueueType = {
 
 export type BetResult = {
   task: Task
-  compliances: number[]
+  // compliances: number[]
   properties: Properties[]
 }
 
@@ -79,31 +79,27 @@ export class BetQueue {
       const saveDir = join(storagePath, `/tasks/${task.id}/bets/${task.bet.id}/${task.createdAt}`)
       await mkdir(saveDir, { recursive: true })
 
-      const compliance = await Compliance.find()
-      const keywords = compliance.map((compliance) => compliance.value)
-      if (keywords.length === 0) throw new Error('No compliances recorded in the database')
+      const compliances = await Compliance.find()
+      if (compliances.length === 0) throw new Error('No compliances recorded in the database')
 
-      scraper = new Scraper(task.bet.url, keywords)
+      scraper = new Scraper(task.bet.url, compliances)
 
       await scraper.loadPage()
       await scraper.savePageContent(saveDir)
       const initImage = await scraper.getScreenshot()
+      if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
       await scraper.scan()
-  
-      const compliancesFound = await scraper.find()
 
       // await scraper.closePopUp()
       const { elements, properties } = await scraper.getProprieties()
-      const screenshots = await scraper.getScreenshots(elements)
-      const filteredScreenshots = await scraper.filterScreenshots(screenshots)
+      const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
   
-      if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
-      for (const [index, evidence] of filteredScreenshots) {
+      for (const [index, evidence] of screenshots) {
         await writeFile(join(saveDir, `/${index}.png`), evidence.image)
       }
 
       const metadata: (Properties & { pathName: string })[] = []
-      for (const [index] of (filteredScreenshots.entries())) {
+      for (const [index] of (screenshots.entries())) {
         const prop = properties[index]
 
         metadata.push({
@@ -113,13 +109,11 @@ export class BetQueue {
       }
       await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
         
-      await scraper.browser.close()
+      await scraper.destroy()
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       done(null, {
         task,
-        properties,
-        compliances: compliance.filter((compliance) => compliancesFound.includes(compliance.value))
-          .map((compliance) => compliance.id)
+        properties
       })
 
     } catch (error) {
@@ -132,16 +126,10 @@ export class BetQueue {
   static async onCompleted(job: Job<BetQueueType>, result: BetResult) {
     console.log(`Job ID ${job.id} completado.`)
     const task = await Task.findOneByOrFail({ id: result.task.id })
-
-    const compliances = (
-      await Promise.all(result.compliances.map((id) => Compliance.findOneBy({ id })))
-    ).filter((compliance) => compliance !== null)
-
-    const properties = await Promise.all(result.properties.map((property) => Property.create({ ...property, task }).save()))
+    const properties = await Promise.all(result.properties.map(async (property) => await Property.create({ ...property, task }).save()))
 
     task.status = 'completed'
     task.properties = properties
-    task.compliances = compliances
     task.finishedAt = new Date()
     task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
     task.save()

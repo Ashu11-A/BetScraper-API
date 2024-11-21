@@ -133,3 +133,4 @@ secret-key
 *.traineddata
 /.vscode
 *.xlsx
+*.json

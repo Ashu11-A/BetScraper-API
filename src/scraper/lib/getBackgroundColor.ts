@@ -1,38 +1,56 @@
 import { ElementHandle } from 'puppeteer'
 import chalk from 'chalk'
 
+export async function resolveCssVariable(element: ElementHandle, variableName: string): Promise<string | null> {
+  const resolvedValue = await element.evaluate((el, variable) => {
+    let currentElement = el
+    while (currentElement) {
+      const style = window.getComputedStyle(currentElement)
+      const value = style.getPropertyValue(variable)?.trim()
+      if (value) return value // Retorna o valor da variável se encontrada
+      currentElement = currentElement.parentElement as Element // Sobe na hierarquia
+    }
+    return null // Se não for encontrado, retorna null
+  }, variableName)
+
+  return resolvedValue
+}
+
 export async function findBackgroundColor(element: ElementHandle): Promise<string> {
   let currentElement = element
-  let accumulatedColor = [0, 0, 0, 0] // Representa RGBA, iniciando como transparente
-
-  console.log(chalk.blue('Iniciando a busca pela cor de fundo...'))
+  let accumulatedColor = [0, 0, 0, 0] // Representa RGBA
 
   while (currentElement) {
-    const isElement = await currentElement.evaluate((el) => el instanceof Element)
-    if (!isElement) break
-
-    const backgroundColor = await currentElement.evaluate((el) => {
-      const style = window.getComputedStyle(el)
-      return style.backgroundColor
+    const elementDetails = await currentElement.evaluate((el) => {
+      const tag = el.tagName.toLowerCase()
+      const id = el.id ? `#${el.id}` : ''
+      const classes = el.className ? `.${el.className.split(' ').join('.')}` : ''
+      return `${tag}${id}${classes}`
     })
 
+    const { backgroundColor, opacity } = await currentElement.evaluate((el) => {
+      const style = window.getComputedStyle(el)
+      return {
+        backgroundColor: style.backgroundColor || style.getPropertyValue('background-color'),
+        opacity: parseFloat(style.opacity) || 1 // Obtém o valor de opacity (1 por padrão)
+      }
+    })
+    console.log(`Processando elemento: ${elementDetails} com cor: ${backgroundColor}, opacidade: ${opacity}`)
+
     const rgba = parseRGB(backgroundColor)
+    rgba[3] *= opacity
 
     if (rgba[3] === 1 && !(rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0)) {
-      // Cor completamente opaca e não é totalmente transparente preta
       console.log(chalk.green(`Cor opaca encontrada: rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`))
       return `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`
     } else if (rgba[3] > 0) {
-      // Cor parcialmente transparente, acumula a mistura
       console.log(chalk.yellow(`Cor transparente encontrada: rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`))
       accumulatedColor = blendColorsRGBA([accumulatedColor[0], accumulatedColor[1], accumulatedColor[2], accumulatedColor[3]], rgba)
     }
-
-    currentElement = await currentElement.evaluateHandle((el) => el.parentElement) as ElementHandle
     console.log(chalk.cyan(`[${accumulatedColor.join(', ')}] Subindo para o elemento pai...`))
+    currentElement = await currentElement.evaluateHandle((el) => el.parentElement) as ElementHandle
   }
 
-  console.log(chalk.green(`Cor final encontrada após combinar com os elementos anteriores: rgba(${accumulatedColor[0]}, ${accumulatedColor[1]}, ${accumulatedColor[2]}, ${accumulatedColor[3]})`))
   return `rgba(${accumulatedColor[0]}, ${accumulatedColor[1]}, ${accumulatedColor[2]}, ${accumulatedColor[3]})`
 }
 

@@ -259,8 +259,8 @@ export class Scraper {
     }
     const relevantElements: Array<ElementHandle<Element>> = []
     const elementKeys = new Set<string>()
-    const imagesFiltered = new Map<string, Compliance[]>()
-    const imagesHasError: string[] = []
+    const imagesFiltered = new Map<string, [Compliance[], ElementHandle<Element>]>()
+    const imagesHasError =  new Map<string, ElementHandle<Element>>()
 
     console.log(chalk.redBright('Rodando OCR'))
   
@@ -270,7 +270,7 @@ export class Scraper {
   
     for (const div of allDivs) {
       // Criar chave única para o elemento
-      const elementKey = await div.evaluate((el) => el.outerHTML)
+      const elementKey = await this.getElementHierarchy(div)
       if (elementKeys.has(elementKey)) {
         console.log(chalk.bgRed(`Elemento duplicado: ${elementKey}`))
         continue
@@ -325,33 +325,35 @@ export class Scraper {
           )
   
           if (request.status !== 200) {
-            imagesHasError.push(path)
+            imagesHasError.set(path, element)
             continue
           }
   
           const compliances = this.findInString(request.data.result)
-          if (compliances.length > 0) imagesFiltered.set(path, compliances)
+          if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
         } catch (e) {
           if (e instanceof AxiosError) {
             console.log(e.response?.data)
           }
-          imagesHasError.push(path)
+          imagesHasError.set(path, element)
         }
       } catch (error) {
         console.log(chalk.bgRed(`Erro ao capturar screenshot: ${error}`))
       }
     }
-  
+    
     // Restaurar estilos originais
     await this.page.evaluate(() => {
       const elements = document.querySelectorAll('*[data-original-display]')
       elements.forEach((el) => {
         if (!(el instanceof HTMLElement)) return
-  
+        
         el.style.display = el.getAttribute('data-original-display') || ''
         el.removeAttribute('data-original-display')
       })
     })
+
+    return { elements: imagesFiltered, errors: imagesHasError }
   } 
 
   async getImagesOCR () {
@@ -439,14 +441,6 @@ export class Scraper {
 
       // Processar filhos recursivamente
       await getProps(elementsChild)
-    }
-    
-    const getDistanceToTop = async (element: ElementHandle<Element>) => {
-      return await element.evaluate((el) => {
-        const rect = el.getBoundingClientRect()
-        const scrollTop = window.scrollY || document.documentElement.scrollTop
-        return rect.top + scrollTop
-      })
     }
     
     const getProps = async (elementsData?: ElementHandle<Element>[]) => {
@@ -554,7 +548,15 @@ export class Scraper {
     }
   }
 
-  getElementHierarchy = async (element: ElementHandle<Element>) => {
+  async getDistanceToTop = async (element: ElementHandle<Element>) => {
+    return await element.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      const scrollTop = window.scrollY || document.documentElement.scrollTop
+      return rect.top + scrollTop
+    })
+  }
+
+  async getElementHierarchy (element: ElementHandle<Element>) => {
     return await element.evaluate((el) => {
       const getPath = (node: Element | null): string => {
         if (!node || node.tagName.toLowerCase() === 'html') return 'html'

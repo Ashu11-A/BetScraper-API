@@ -7,6 +7,7 @@ import { betsHeader } from './exporter/bets.js'
 import { style } from './exporter/style.js'
 import { advisementKeysHeader, keysHeader } from './exporter/warns.js'
 import { writeFile } from 'fs/promises'
+import { format } from 'date-fns'
 
 type PropKeys = typeof betsHeader[number]['key']
 
@@ -19,11 +20,11 @@ const table = new Exporter()
 const properties: Array<Partial<Record<PropKeys, string>>> = []
 const data: Task[] = []
 const keys = new Map<'advisement' | 'legalAgeAdvisement', string[]>([])
-const bets = await Bet.find({ order: { name: 'ASC' }})
+const bets = await Bet.find({ order: { id: 'ASC' }})
 
 for (const bet of bets) {
   console.log(`[${bet.id}] Bet ${bet.url}`)
-  const task = await Task.findOneOrFail({
+  const task = await Task.findOne({
     where: { bet: { id: bet.id } },
     relations: {
       properties: {
@@ -32,6 +33,8 @@ for (const bet of bets) {
     },
     order: { id: 'DESC' }
   })
+  if (!task) continue
+
   data.push(task)
 
   const keysSorted = keysHeader.toSorted((a, b) => a.header.localeCompare(b.header))
@@ -39,6 +42,7 @@ for (const bet of bets) {
   for (const column of keysSorted) {
     const type = advisementKeysHeader.find((item) => item.key === column.key) ? 'advisement' : 'legalAgeAdvisement'
     const header = [
+      { header: 'Id', key: 'id' },
       { header: 'Bet', key: 'bet' },
       { header: 'URL', key: 'url' },
       { header: `Contém: "${column.header}"?`, key: column.key },
@@ -46,7 +50,9 @@ for (const bet of bets) {
       { header: 'Porcentagem de scrollagem', key: 'scrollPercentage' },
       { header: 'Ostensividade', key: 'ostentatiousness' },
       { header: 'Contraste', key: 'contrast' },
-      // { header: 'Proporção', key: 'proportion' },
+      { header: 'Proporção', key: 'proportion' },
+      { header: 'Início da análise', key: 'dateStart' },
+      { header: 'Fim da análise', key: 'dateEnd' },
     ] as const
 
     const foundCompliance = task.properties?.some((properties) => {
@@ -60,6 +66,7 @@ for (const bet of bets) {
       .createWorksheet(column.header)
       .setColumns<typeof header>(header)
       .addRow<typeof header>({
+        id: bet.id,
         bet: bet.name,
         url: bet.url,
         [column.key]: foundCompliance ? 'Sim' : 'Não',
@@ -67,11 +74,15 @@ for (const bet of bets) {
         localization: localization,
         ostentatiousness: (property?.contrast ?? 0) >= 4.5 ? 'Sim' : 'Não',
         contrast:  String(property?.contrast ?? 0),
+        proportion: `${property?.proportionPercentage.toFixed(2) ?? 0}%`,
+        dateStart: task.scheduledAt ? format(task.scheduledAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não inicializado',
+        dateEnd: task.finishedAt ? format(task.finishedAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não finalizado',
       })
       .setStyle(style)
       .ajustColumn()
 
     properties.push({
+      id: String(bet.id),
       bet: bet.name,
       url: bet.url,
       error: task.errorMessage,
@@ -82,7 +93,9 @@ for (const bet of bets) {
       [`localization_${type}`]: localization,
       [`ostentatiousness_${type}`]: (property?.contrast ?? 0) >= 4.5 ? 'Sim' : 'Não',
       [`contrast_${type}`]:  String(property?.contrast ?? 0),
-      // proportion: String(property?.proportionPercentage ?? '0'),
+      [`proportion_${type}`]:  `${property?.proportionPercentage.toFixed(2) ?? 0}%`,
+      dateStart: task.scheduledAt ? format(task.scheduledAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não inicializado',
+      dateEnd: task.finishedAt ? format(task.finishedAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não finalizado',
     })
     keys.set(type, Object.assign(keys.get(type) ?? [], [column.key]))
   }

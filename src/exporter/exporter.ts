@@ -7,7 +7,7 @@ export type Column = {
 };
 
 type ColumnData<T extends readonly Column[]> = {
-  [K in Extract<T[number]['key'], string>]?: string;
+  [K in Extract<T[number]['key'], string>]?: string | number;
 };
 // Omitir todas as funções
 type OmitAllFunctions<T> = Pick<T, { 

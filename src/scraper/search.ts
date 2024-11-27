@@ -1,3 +1,4 @@
+import Compliance from '@/database/entity/Compliance.js'
 import { calculateContrastRatio } from '@/scraper/lib/contrast.js'
 import { calculateProportion } from '@/scraper/lib/proportion.js'
 import { parseRGB } from '@/scraper/lib/rgb.js'
@@ -5,15 +6,15 @@ import chalk from 'chalk'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
-import { createWorker, Worker } from 'tesseract.js'
 import { Criteria } from './criteria.js'
 import { findBackgroundColor } from './lib/getBackgroundColor.js'
 import { Properties } from './properties.js'
 import { Screenshot } from './screenshots.js'
-import Compliance from '@/database/entity/Compliance.js'
 
+import axios, { AxiosError } from 'axios'
+import { createWorker, Worker } from 'tesseract.js'
 const woker: Worker = await createWorker('por', 2, { gzip: true })
 /**
  * Tamanho da viewport da página.
@@ -45,6 +46,8 @@ export class Scraper {
    * @type {Array<ElementHandle<Element>>}
    */
   public elements: Array<ElementHandle<Element>> = []
+
+  public images: string[] = []
 
   /**
    * Cria uma instância da classe Scraper.
@@ -99,31 +102,48 @@ export class Scraper {
         '--ignore-certificate-errors-skip-list',
 
         //Fix Fallback WebGL
-        '--enable-unsafe-swiftshader'
+        '--enable-unsafe-swiftshader',
+
+        // Fix: Navigating frame was detached
+        '--disable-features=site-per-process',
       ]
     })
 
     const page = await this.browser.newPage()
     this.page = page
 
-    // page.on('response', async (response) => {
-    //   const url = response.url()
+    page.on('response', async (response) => {
+      const url = response.url()
+      function extractImageName(url: string): string {
+        const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
+        const imagePathMatch = decodedUrl.match(/url=(.*)&w=/) // Extrai o valor do parâmetro `url`
+        
+        if (imagePathMatch && imagePathMatch[1]) {
+          const fullPath = imagePathMatch[1]
+          return fullPath.split('/').pop() || '' // Obtém apenas o nome do arquivo
+        }
+    
+        return '' // Retorna vazio caso não encontre a imagem
+      }
 
-    //   if (response.request().resourceType() === 'image') {
-    //     const file = await response.buffer()
-    //     const fileName = url.split('/').pop()
+      if (response.request().resourceType() === 'image') {
+        const file = await response.buffer()
+      
+        const fileName = extractImageName(url)
+        console.log(fileName)
 
-    //     if (!fileName) {
-    //       console.log(`Esse link não há o nome da imagem: ${url}`)
-    //       return
-    //     }
-    //     if(!['png', 'jpeg', 'jpg'].some((format) => fileName.endsWith(format))) return
-    //     console.log(`⬇️ Fazendo o Download: ${url}`)
+        if (!fileName) {
+          console.log(`Esse link não há o nome da imagem: ${url}`)
+          return
+        }
+        // if(!['png', 'jpeg', 'jpg', 'svg'].some((format) => fileName.endsWith(format))) return
+        console.log(chalk.bgBlue(`⬇️ Fazendo o Download: ${url}`))
 
-    //     const filePath = resolve(tmpdir(), fileName)
-    //     await writeFile(filePath, file)
-    //   }
-    // })
+        const filePath = resolve(tmpdir(), fileName)
+        await writeFile(filePath, file)
+        this.images.push(filePath)
+      }
+    })
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
     await page.setCacheEnabled(true)
@@ -137,7 +157,12 @@ export class Scraper {
       Object.defineProperty(navigator, 'platform', { get: () => 'Win32' })
     })
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 })
-    await page.goto(this.url, { waitUntil: 'networkidle2' })
+  
+    this.page.on('load', () => console.log('Página carregada.'))
+    this.page.on('error', (err) => console.error('Erro na página:', err))
+    this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
+    await this.page.goto(this.url, { waitUntil: 'networkidle2' })
+    // this.disableNavigation()
 
     return this
   }
@@ -214,6 +239,152 @@ export class Scraper {
     return compliances
   }
 
+  findInString(text: string) {
+    const compliances: Compliance[] = []
+
+    for (const compliance of this.compliances) {
+      if (text.includes(compliance.value)) {
+        console.log(chalk.bgBlue(`Palavra ${compliance.value} encontrada`))
+        compliances.push(compliance)
+      }
+    }
+
+    console.log(chalk.yellow(`Bet: ${this.url} ${compliances.length} strings encontradas`))
+    return compliances
+  }
+
+  async getProprietiesOCR() {
+    if (!this.page) {
+      throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
+    }
+    const relevantElements: Array<ElementHandle<Element>> = []
+    const elementKeys = new Set<string>()
+    const imagesFiltered = new Map<string, Compliance[]>()
+    const imagesHasError: string[] = []
+
+    console.log(chalk.redBright('Rodando OCR'))
+  
+    // Obter todos os elementos `div` na página
+    const allDivs = await this.page.$$('div')
+    console.log(`Encontrados ${allDivs.length} divs na página.`)
+  
+    for (const div of allDivs) {
+      // Criar chave única para o elemento
+      const elementKey = await div.evaluate((el) => el.outerHTML)
+      if (elementKeys.has(elementKey)) {
+        console.log(chalk.bgRed(`Elemento duplicado: ${elementKey}`))
+        continue
+      }
+  
+      // Obter bounding box
+      const boundingBox = await div.boundingBox()
+      if (!boundingBox) continue
+  
+      const { width, height } = boundingBox
+      const minWidth = 200
+      const minHeight = 100
+  
+      if (width < minWidth || height < minHeight) continue
+      if (width > viewport.width || height > viewport.height) continue
+  
+      // Armazenar elemento relevante
+      relevantElements.push(div)
+      elementKeys.add(elementKey)
+    }
+  
+    console.log(`Elementos relevantes encontrados: ${relevantElements.length}`)
+  
+    // Ocultar sobreposições antes do OCR
+    await this.page.evaluate(() => {
+      const elements = document.querySelectorAll('*')
+      elements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return
+  
+        const style = window.getComputedStyle(el)
+        if (style.position === 'fixed' || style.position === 'absolute') {
+          el.setAttribute('data-original-display', style.display)
+          el.style.display = 'none'
+        }
+      })
+    })
+  
+    // Processar OCR nos elementos relevantes
+    for (const element of relevantElements) {
+      const path = join(tmpdir(), `temp-image-${Date.now()}.png`)
+  
+      try {
+        const screenshot = await element.screenshot()
+        const image = await new Screenshot(screenshot).toBuffer()
+        await writeFile(path, image)
+
+        try {
+          const request = await axios.post(
+            'http://localhost:5000/ocr',
+            { imagePath: path },
+            { timeout: 0 }
+          )
+  
+          if (request.status !== 200) {
+            imagesHasError.push(path)
+            continue
+          }
+  
+          const compliances = this.findInString(request.data.result)
+          if (compliances.length > 0) imagesFiltered.set(path, compliances)
+        } catch (e) {
+          if (e instanceof AxiosError) {
+            console.log(e.response?.data)
+          }
+          imagesHasError.push(path)
+        }
+      } catch (error) {
+        console.log(chalk.bgRed(`Erro ao capturar screenshot: ${error}`))
+      }
+    }
+  
+    // Restaurar estilos originais
+    await this.page.evaluate(() => {
+      const elements = document.querySelectorAll('*[data-original-display]')
+      elements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return
+  
+        el.style.display = el.getAttribute('data-original-display') || ''
+        el.removeAttribute('data-original-display')
+      })
+    })
+  } 
+
+  async getImagesOCR () {
+    const imagesFiltered = new Map<string, Compliance[]>()
+    const imagesHasError: string[] = []
+
+    for (const path of this.images) {
+      console.log(path)
+      try {
+        const request = await axios.post(
+          'http://localhost:5000/ocr',
+          { imagePath: path },
+          { timeout: 0 }
+        )
+
+        if (request.status !== 200) {
+          imagesHasError.push(path)
+          continue
+        }
+
+        console.log(request.data)
+
+        const compliances = this.findInString(request.data.result)
+        if (compliances.length > 0) imagesFiltered.set(path, compliances)
+      } catch (e) {
+        if (e instanceof AxiosError) {
+          console.log(e.response?.data)
+        }
+        imagesHasError.push(path)
+      }
+    }
+  }
+
   /**
  * Coleta as propriedades de elementos selecionados da página, analisando atributos como cor do texto, cor de fundo,
  * contraste, proporção em relação à viewport, e visibilidade na página.
@@ -229,7 +400,8 @@ export class Scraper {
 
     const properties = new Set<Properties>()
     const elements = new Set<ElementHandle<Element>>()
-
+    const processedKeys = new Set()
+  
     const isPropertyDuplicate = (existingProperties: Properties[], newProperty: Properties) => {
       return existingProperties.some(prop => 
         prop.elementBox.width === newProperty.elementBox.width &&
@@ -237,56 +409,105 @@ export class Scraper {
       )
     }
 
+    const getTextSize = async (element: ElementHandle<Element>) => {
+      return await element.evaluate((el) => {
+        const range = document.createRange()
+        const textNode = el.firstChild
+    
+        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+          return null // Sem texto direto no elemento
+        }
+    
+        // Define o range para abranger apenas o texto do elemento
+        range.selectNodeContents(textNode)
+    
+        const rect = range.getBoundingClientRect()
+        return {
+          width: rect.width,
+          height: rect.height,
+          top: rect.top + window.scrollY,
+          left: rect.left + window.scrollX,
+        }
+      })
+    }
+    
+    const nextChildren = async (element: ElementHandle<Element>) => {
+      const childrenHandle = await element.evaluateHandle((el) => Array.from(el.children))
+      const children = await childrenHandle.getProperties()
+      const childElements = Array.from(children.values()) as ElementHandle<Element>[]
+      const elementsChild = await this.filter(childElements)
+
+      // Processar filhos recursivamente
+      await getProps(elementsChild)
+    }
+    
+    const getDistanceToTop = async (element: ElementHandle<Element>) => {
+      return await element.evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        const scrollTop = window.scrollY || document.documentElement.scrollTop
+        return rect.top + scrollTop
+      })
+    }
+    
     const getProps = async (elementsData?: ElementHandle<Element>[]) => {
       console.log(chalk.bgYellow(`Bet: ${this.url} coletando subPropriedades de ${(elementsData ?? this.elements).length} elementos`))
+    
       for await (const element of (elementsData ?? this.elements)) {
-        if (elements.has(element)) { console.log(chalk.bgRed('Elemento duplicado em: getProprieties')); continue } // Ignora duplicatas
-  
-        const text = await element.evaluate((el) => el.textContent)
-        if (!text || !this.compliances.some((compliance) => text.includes(compliance.value))) continue
         if (!element.asElement()) continue
   
-        const viewport = this.page!.viewport()
-        if (!viewport) continue
-  
-        const childrenHandle = await element.evaluateHandle((e) => Array.from(e.children), element)
-        const children = await childrenHandle.getProperties()
-        const childElements = Array.from(children.values()) as ElementHandle<Element>[]
-        const hasChildNodes = childElements.length > 0
-  
-        // Processa elementos filhos, se existirem
-        if (hasChildNodes) {
-          const elementsChild = await this.filter(childElements)
-          await getProps(elementsChild)
+        const elementKey = await this.getElementHierarchy(element)
+        if (processedKeys.has(elementKey)) {
+          console.log(chalk.bgRed(`Elemento duplicado em getProprieties: ${elementKey}`))
           continue
         }
-  
+    
+        const text = await element.evaluate((el) => el.textContent?.trim() || '')
+        if (!text || !this.compliances.some((compliance) => text.includes(compliance.value))) continue
+    
+        const viewport = this.page!.viewport()
+        if (!viewport) continue
+    
+        // Verificar se o elemento possui filhos e ignorar o processamento se for o caso
+        const hasChildren = await element.evaluate((el) => el.children.length > 0)
+        if (hasChildren) {
+          await nextChildren(element)
+          continue
+        }
+    
+        // Substituir o texto diretamente e reavaliar o boxModel
         const compliances = await this.find([element])
         const replaceValue = compliances.map((compliance) => compliance.value).join(', ')
         await element.evaluate((el, replaceValue) => (el.textContent = replaceValue), replaceValue)
-        const textContent = await element.evaluate((el) => el.textContent)
-        if (!textContent) continue
-  
-        const box = await element.boxModel()
+    
+        const updatedText = await element.evaluate((el) => el.textContent)
+        if (!updatedText) continue
+    
+        const box = await getTextSize(element)
         if (!box) continue
-  
-        // Calcula a distância do elemento até o topo da página
-        const distanceToTop = await element.evaluate((el) => {
-          const elementRect = el.getBoundingClientRect()
-          const scrollTop = window.scrollY || document.documentElement.scrollTop
-          return elementRect.top + scrollTop
+    
+        // Calcular distância do topo
+        const distanceToTop = await getDistanceToTop(element)
+    
+        // Processar estilo e contraste
+        const { color: textColor, opacity } = await element.evaluate((el) => {
+          const style = window.getComputedStyle(el)
+          return {
+            color: style.color || style.getPropertyValue('color'),
+            opacity: parseFloat(style.opacity) || 1,
+          }
         })
-  
-        const textColor = await element.evaluate((el) => window.getComputedStyle(el).color)
+    
         const backgroundColor = await findBackgroundColor(element)
-        const [r2, g2, b2] = parseRGB(backgroundColor)
-        const [r1, g1, b1] = parseRGB(textColor, [r2, g2, b2])
+        const [r2, g2, b2] = parseRGB(backgroundColor, 1)
+        const [r1, g1, b1] = parseRGB(textColor, opacity, [r2, g2, b2])
         const contrastRatio = calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
-  
+    
         const pageDimensions = await this.getSize()
         const isInViewport = distanceToTop <= viewport.height
-  
-        // Coleta as propriedades de cada elemento e adiciona à lista de propriedades
+    
+        console.log(chalk.bgRed(`Proporção: ${calculateProportion(box.width, viewport.width)}, ${box.width}, ${viewport.width}`))
+    
+        // Criar propriedades do elemento
         const newProperty = new Properties({
           compliances,
           contrast: contrastRatio,
@@ -295,33 +516,34 @@ export class Scraper {
           colors: {
             text: {
               value: textColor,
-              color: [r1, g1, b1]
+              color: [r1, g1, b1],
             },
             backgroundColor: {
               value: backgroundColor,
-              color: [r2, g2, b2]
-            }
+              color: [r2, g2, b2],
+            },
           },
-  
           isIntersectingViewport: await element.isIntersectingViewport(),
           isVisible: await element.isVisible(),
           isHidden: await element.isHidden(),
-          hasChildNodes,
+          hasChildNodes: hasChildren,
           isInViewport,
-  
           elementBox: box,
           pageDimensions,
           distanceToTop,
-          viewport
+          viewport,
         })
-  
+    
         if (!isPropertyDuplicate(Array.from(properties), newProperty)) {
           properties.add(newProperty)
-          return
+          elements.add(element)
+          processedKeys.add(elementKey)
+          continue
         }
         console.log(chalk.bgMagenta('Elemento duplicado, ignorando...'))
       }
     }
+    
 
     await getProps()
 
@@ -330,6 +552,21 @@ export class Scraper {
       properties: Array.from(properties),
       elements: Array.from(elements)
     }
+  }
+
+  getElementHierarchy = async (element: ElementHandle<Element>) => {
+    return await element.evaluate((el) => {
+      const getPath = (node: Element | null): string => {
+        if (!node || node.tagName.toLowerCase() === 'html') return 'html'
+  
+        const parentPath = node.parentElement ? getPath(node.parentElement) : 'html'
+        const tagName = node?.tagName ?? ''
+        const className = node.classList?.length ? `.${Array.from(node.classList).join('.')}` : ''
+        return (`${parentPath}.${tagName}${className}`.toLowerCase())
+      }
+  
+      return getPath(el)
+    })
   }
 
   /**
@@ -468,14 +705,22 @@ export class Scraper {
    * @returns {Promise<void>}
    */
   async savePageContent(path: string): Promise<void> {
-    if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
-    const filename = 'page.pdf'
+    try {
+      if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
+        
+      if (!existsSync(dirname(path))) await mkdir(dirname(path))
+      await this.page.pdf({
+        format: 'A4',
+        path: join(path, 'page.pdf')
+      })
+  
+      await this.page.screenshot({ path: join(path, 'fullpage.png'), fullPage: true })
       
-    if (!existsSync(dirname(path))) await mkdir(dirname(path))
-    await this.page.pdf({
-      format: 'A4',
-      path: join(path, filename)
-    })
+      const html = await this.page.content()
+      await writeFile(join(path, 'page.html'), html)
+    } catch (e) {
+      console.log(e)
+    }
   }
 
   /**
@@ -491,30 +736,30 @@ export class Scraper {
   }
 
 
-  // /**
-  //  * Desabilita a possibilidade de clicar em URLs
-  //  * Isso irá interceptar todos os requests e aborta-los
-  //  *
-  //  * @private
-  //  */
-  // private disableNavigation() {
-  //   console.log(chalk.yellow(`Bet: ${this.url} navegação disabilitado`))
-  //   const page = this.page
-  //   if (page === undefined) throw new Error('Page is undefined, try loadPage function before')
+  /**
+   * Desabilita a possibilidade de clicar em URLs
+   * Isso irá interceptar todos os requests e aborta-los
+   *
+   * @private
+   */
+  private disableNavigation() {
+    console.log(chalk.yellow(`Bet: ${this.url} navegação disabilitado`))
+    const page = this.page
+    if (page === undefined) throw new Error('Page is undefined, try loadPage function before')
 
 
-  //   page.on('request', (req) => {
-  //     console.log(chalk.red(`⛔ Ignoring requests: ${req.url()}`))
+    page.on('request', (req) => {
+      console.log(chalk.red(`⛔ Ignoring requests: ${req.url()}`))
 
-  //     if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
-  //       console.log('Abort')
-  //       req.abort('aborted')
-  //       return
-  //     }
-  //     req.continue()
-  //   })
-  //   page.setRequestInterception(true)
-  // }
+      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
+        console.log('Abort')
+        req.abort('aborted')
+        return
+      }
+      req.continue()
+    })
+    page.setRequestInterception(true)
+  }
 
   // async closePopUp() {
   //   if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')

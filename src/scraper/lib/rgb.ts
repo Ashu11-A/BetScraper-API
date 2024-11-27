@@ -1,3 +1,5 @@
+import chalk from 'chalk'
+
 export function rgbaToRgb(
   rgba: [number, number, number, number?],
   bgColor: [number, number, number] = [255, 255, 255] // Fundo padrão: branco
@@ -17,6 +19,7 @@ export function rgbaToRgb(
 
 export function parseRGB(
   colorString: string,
+  opacity: number = 1,
   bgColor: [number, number, number] = [255, 255, 255] // Fundo padrão
 ): [number, number, number] {
   // Expressão regular para corresponder a RGB ou RGBA
@@ -27,9 +30,13 @@ export function parseRGB(
     const [r, g, b] = [1, 2, 3].map((i) => parseInt(rgbMatch[i], 10))
     const alpha = rgbMatch[4] ? parseFloat(rgbMatch[4]) : 1 // Pega alpha, ou assume 1 se não presente
 
+    // Ajusta o alpha com base na opacidade do elemento
+    const effectiveAlpha = alpha * opacity
+
     // Se for RGBA, converte para RGB usando a cor de fundo
-    if (alpha < 1) {
-      return rgbaToRgb([r, g, b, alpha], bgColor)
+    if (effectiveAlpha < 1) {
+      console.log(chalk.bgWhite(`Cor tansparente ${colorString} ${bgColor}`))
+      return rgbaToRgb([r, g, b, effectiveAlpha], bgColor)
     } else {
       // Caso seja apenas RGB, retorna diretamente
       return [r, g, b]

@@ -11,37 +11,21 @@ export async function findBackgroundColor(
   let accumulatedColor: [number, number, number, number] = [0, 0, 0, 0] // RGBA inicial
 
   const getParentElementSafely = async (element: ElementHandle): Promise<ElementHandle | null> => {
-    try {
-      // Verifique se o nó ainda está no DOM antes de tentar interagir com ele
-      const isDetached = await element.evaluate((el) => !el.isConnected)
-      if (isDetached) {
-        console.error('O nó foi desconectado do DOM.')
-        return null
-      }
-  
-      return await element.evaluateHandle((el) => {
-        const parent = el.parentElement ?? el.parentNode
-        return parent instanceof Element ? parent : null
-      }) as ElementHandle | null
-    } catch (error) {
-      console.error('Erro ao tentar acessar o elemento pai:', error)
-      return null
-    }
+    return await element.evaluateHandle((el) => {
+      const parent = el?.parentElement ?? el?.parentNode
+      return parent instanceof Element ? parent : null
+    }) as ElementHandle | null
   }
+  
 
   while (currentElement) {
-    const result = await currentElement.evaluate((el) => {
-      if (!el) return null
-
+    const { backgroundColor, opacity } = await currentElement.evaluate((el) => {
       const style = window.getComputedStyle(el)
       return {
         backgroundColor: style.backgroundColor || style.getPropertyValue('background-color'),
         opacity: parseFloat(style.opacity) || 1, // Opacidade padrão 1
       }
     })
-    if (!result) return 'rgba(0, 0, 0, 0)'
-
-    const { backgroundColor, opacity } = result
     console.log(`Processando elemento com cor: ${backgroundColor}, opacidade: ${opacity}`)
 
     const rgba = parseRGB(backgroundColor)
@@ -61,13 +45,10 @@ export async function findBackgroundColor(
     console.log(chalk.cyan(`Cor acumulada: rgba(${accumulatedColor.join(',')})`))
 
     // Atualiza para o elemento pai
-    const element = await getParentElementSafely(currentElement)
-    if (!element) break
-
-    currentElement = element
+    currentElement = await getParentElementSafely(currentElement)
   }
 
-  return `rgba(${accumulatedColor.join(', ')})`
+  return `rgba(${accumulatedColor[0]}, ${accumulatedColor[1]}, ${accumulatedColor[2]}, ${accumulatedColor[3]})`
 }
 
 /**

@@ -1,5 +1,5 @@
 import Compliance from '@/database/entity/Compliance.js'
-import { BoxModel, Viewport } from 'puppeteer'
+import { Viewport } from 'puppeteer'
 
 export class Properties {
   compliances: Compliance[]
@@ -46,7 +46,12 @@ export class Properties {
    * Localização do elemento
    */
   distanceToTop: number
-  elementBox: BoxModel
+  elementBox: {
+      width: number;
+      height: number;
+      top: number;
+      left: number;
+  }
   pageDimensions: {
     width: number;
     height: number;

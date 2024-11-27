@@ -89,33 +89,35 @@ export class BetQueue {
       const initImage = await scraper.getScreenshot()
       if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
       await scraper.scan()
+      await scraper.getProprietiesOCR()
+      // await scraper.getImagesOCR()
 
-      // await scraper.closePopUp()
-      const { elements, properties } = await scraper.getProprieties()
-      const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
+      // // await scraper.closePopUp()
+      // const { elements, properties } = await scraper.getProprieties()
+      // const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
   
-      for (const [index, evidence] of screenshots) {
-        await writeFile(join(saveDir, `/${index}.png`), evidence.image)
-      }
+      // for (const [index, evidence] of screenshots) {
+      //   await writeFile(join(saveDir, `/${index}.png`), evidence.image)
+      // }
 
-      const metadata: (Properties & { pathName: string })[] = []
-      for (const [index] of (screenshots.entries())) {
-        const prop = properties[index]
+      // const metadata: (Properties & { pathName: string })[] = []
+      // for (const [index] of (screenshots.entries())) {
+      //   const prop = properties[index]
 
-        metadata.push({
-          ...prop,
-          pathName: `${index}.png`
-        })
-      }
-      await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
+      //   metadata.push({
+      //     ...prop,
+      //     pathName: `${index}.png`
+      //   })
+      // }
+      // await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
         
-      await scraper.destroy()
-      // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
-      done(null, {
-        task,
-        properties
-      })
-
+      // await scraper.destroy()
+      // // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
+      // done(null, {
+      //   task,
+      //   properties
+      // })
+      done()
     } catch (error) {
       await scraper?.browser.close()
       console.error(`Erro no Job ID ${job.id}:`, error)

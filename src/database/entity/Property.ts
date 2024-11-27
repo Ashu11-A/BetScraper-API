@@ -1,5 +1,5 @@
 import { Properties } from '@/scraper/properties.js'
-import { type BoxModel, type Viewport } from 'puppeteer'
+import { type Viewport } from 'puppeteer'
 import { BaseEntity, Column, Entity, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
 import Compliance from './Compliance.js'
 import { Task } from './Task.js'
@@ -89,5 +89,10 @@ export class Property extends BaseEntity implements Properties {
         },
       }
     })
-      elementBox!: BoxModel
+      elementBox!: {
+        width: number;
+        height: number;
+        top: number;
+        left: number;
+    }
 }

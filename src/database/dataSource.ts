@@ -15,7 +15,7 @@ export default new DataSource({
   database: process.env['DATABASE_NAME'],
   synchronize: false,
   charset: 'utf8mb4',
-  logging: true,
+  logging: false,
   entities: await glob(join(path, 'entity', '**/*.{js,ts}')),
   migrations: await glob(join(path, 'migration', '**/*.{js,ts}')),
   subscribers: [],

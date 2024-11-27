@@ -11,6 +11,7 @@ import { Router } from './controllers/router.js'
 import Database from './database/dataSource.js'
 import { BetQueue } from './queues/BetQueue.js'
 
+// await BetQueue.removeAllRepeatable()
 execSync('bun run migration:run || true', { stdio: 'inherit' })
 
 const fastify = new Fastify({ port: 3000, host: '0.0.0.0' })
@@ -18,11 +19,10 @@ await Database.initialize()
 await registerCrons()
 await registerCompliances()
 await registerBets()
-await registerScheduled()
+// await registerScheduled()
 // await Database.dropDatabase()
 
 BetQueue.initialize()
-// await BetQueue.removeAllRepeatable()
 
 fastify.init()
 await Router.register()

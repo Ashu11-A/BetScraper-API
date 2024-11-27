@@ -8,7 +8,6 @@ export class Queue<T> extends QueueBull<T> {
       ...opts,
       defaultJobOptions: {
         attempts: 2,
-        delay: 10000,
       },
       redis: {
         host: process.env['REDIS_HOST'],

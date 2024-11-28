@@ -14,10 +14,9 @@ import { Properties } from './properties.js'
 import { Screenshot } from './screenshots.js'
 
 import axios, { AxiosError } from 'axios'
+import { rm } from 'fs/promises'
 import { createWorker, Worker } from 'tesseract.js'
 import { OCRs } from './ocr.js'
-import { rmdir } from 'fs/promises'
-import { rm } from 'fs/promises'
 const woker: Worker = await createWorker('por', 2, { gzip: true })
 /**
  * Tamanho da viewport da página.

@@ -89,8 +89,8 @@ export class BetQueue {
       const initImage = await scraper.getScreenshot()
       if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
       await scraper.scan()
-      await scraper.getProprietiesOCR()
-      // await scraper.getImagesOCR()
+      await scraper.getImagesOCR()
+      const { elements, errors } = await scraper.getProprietiesOCR()
 
       // // await scraper.closePopUp()
       // const { elements, properties } = await scraper.getProprieties()

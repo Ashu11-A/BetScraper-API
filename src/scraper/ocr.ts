@@ -11,6 +11,14 @@ export class OCRs {
    * @type {boolean}
    */
   isInViewport: boolean
+  isHidden: boolean
+  isVisible: boolean
+  /**
+   * Caso o elemento esteja escondido em alguma sub-elemento que não está visivel para o usuário.
+   *
+   * @type {boolean}
+   */
+  isIntersectingViewport: boolean
   
   viewport: Viewport
   /**
@@ -29,7 +37,9 @@ export class OCRs {
   }
     
   constructor({
+    isHidden,
     viewport,
+    isVisible,
     elementBox,
     compliances,
     isInViewport,
@@ -37,8 +47,11 @@ export class OCRs {
     pageDimensions,
     scrollPercentage,
     proportionPercentage,
+    isIntersectingViewport,
   }: OCRs) {
+    this.isHidden = isHidden
     this.viewport = viewport
+    this.isVisible = isVisible
     this.elementBox = elementBox
     this.compliances = compliances
     this.isInViewport = isInViewport
@@ -46,5 +59,6 @@ export class OCRs {
     this.pageDimensions = pageDimensions
     this.scrollPercentage = scrollPercentage
     this.proportionPercentage = proportionPercentage
+    this.isIntersectingViewport = isIntersectingViewport
   }
 }

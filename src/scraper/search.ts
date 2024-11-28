@@ -6,7 +6,7 @@ import chalk from 'chalk'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { dirname, join, resolve } from 'path'
+import { dirname, join } from 'path'
 import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
 import { Criteria } from './criteria.js'
 import { findBackgroundColor } from './lib/getBackgroundColor.js'
@@ -15,7 +15,9 @@ import { Screenshot } from './screenshots.js'
 
 import axios, { AxiosError } from 'axios'
 import { createWorker, Worker } from 'tesseract.js'
-import { OCR } from './ocr.js'
+import { OCRs } from './ocr.js'
+import { rmdir } from 'fs/promises'
+import { rm } from 'fs/promises'
 const woker: Worker = await createWorker('por', 2, { gzip: true })
 /**
  * Tamanho da viewport da página.
@@ -68,6 +70,7 @@ export class Scraper {
   async loadPage(): Promise<Scraper> {
     console.log(chalk.yellow(`Bet: ${this.url} entrou na fila de processamento`))
     this.browser = await puppeteer.launch({
+      headless: false,
       defaultViewport: {
         height: viewport.height,
         width: viewport.width
@@ -113,6 +116,7 @@ export class Scraper {
     const page = await this.browser.newPage()
     this.page = page
 
+    /*
     page.on('response', async (response) => {
       const url = response.url()
     
@@ -143,24 +147,25 @@ export class Scraper {
         this.images.push(filePath)
       }
     })
+      */
     
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
     await page.setCacheEnabled(true)
     await page.setExtraHTTPHeaders({
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+      'Accept-Language': 'pt-BR,pt;q=0.9'
     })
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => false })
-      Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'en-US', 'en'] })
+      Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR'] })
       Object.defineProperty(navigator, 'plugins', { get: () => [{ name: 'Chrome PDF Plugin' }, { name: 'Chrome PDF Viewer' }, { name: 'Native Client' }] })
       Object.defineProperty(navigator, 'platform', { get: () => 'Win32' })
     })
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 })
   
-    this.page.on('load', () => console.log('Página carregada.'))
-    this.page.on('error', (err) => console.error('Erro na página:', err))
-    this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
+    // this.page.on('load', () => console.log('Página carregada.'))
+    // this.page.on('error', (err) => console.error('Erro na página:', err))
+    // this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
     await this.page.goto(this.url, { waitUntil: 'networkidle2' })
     // this.disableNavigation()
 
@@ -256,51 +261,85 @@ export class Scraper {
     console.log(chalk.yellow(`Bet: ${this.url} ${compliances.length} strings encontradas`))
     return compliances
   }
+
+  async getParentElementSafely(element: ElementHandle): Promise<ElementHandle<Element> | null> {
+    try {
+      const parent = await element.evaluateHandle((el) => {
+        const parent = el.parentElement ?? el.parentNode
+        return parent instanceof Element ? parent : null
+      }) as ElementHandle<Element> | null
+
+      if (parent && parent.asElement()) return parent
+      return null
+    } catch (error) {
+      console.error('Erro ao tentar acessar o elemento pai:', error)
+      return null
+    }
+  }
+  
   
   async getProprietiesOCR() {
+    if (!this.page) throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
+    if (existsSync(join(process.cwd(), 'png'))) await rm(join(process.cwd(), 'png'), { recursive: true })
+    if (existsSync(join(process.cwd(), 'svg'))) await rm(join(process.cwd(), 'svg'), { recursive: true })
+        
     console.log(chalk.redBright('Rodando OCR'))
-    if (!this.page) {
-      throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
-    }
+
     const imagesFiltered = new Map<string, [Compliance[], ElementHandle<Element>]>()
     const imagesHasError =  new Map<string, ElementHandle<Element>>()
-
-    const elementKeys = new Set<string>()
     const relevantElements: Array<ElementHandle<Element>> = []
 
+    const elements = await this.page.$$('*')
+    const elementsWithImageOrSVG = (await Promise.all(
+      elements.map(async (el) => {
+        const hasChildImageOrSvg = await el.evaluate(
+          (element) => {
+            if (element.querySelector('img')) return 'img'
+            if (element.querySelector('svg')) return 'svg'
+            
+            return null
+          }
+        )
+        
+        if (hasChildImageOrSvg !== null) {
+          console.log(chalk.bgGreen(`Elemento ${await this.getElementHierarchy(el)} contém uma imagem ou svg de interesse!`))
+          
+          if (hasChildImageOrSvg === 'svg') return await this.getParentElementSafely(el)
+          return el
+        }
+        
+        return null
+      }))).filter((el) => el !== null)
+      
+    // const elementKeys = new Set<string>()
+    const parentElementHandles = (await Promise.all(
+      elementsWithImageOrSVG.map(async (el) => {
+        /*
+        const elementKey = await this.getElementHierarchy(el)
+        if (elementKeys.has(elementKey)) {
+        // console.log(chalk.bgRed(`Elemento duplicado: ${elementKey}`));
+          return null
+        }
+    
+        elementKeys.add(elementKey)
+        */
+        return el
+      }))).filter((el) => el !== null)
   
-    // Obter todos os elementos `div` na página
-    const allDivs = await this.page.$$('div')
-    console.log(`Encontrados ${allDivs.length} divs na página.`)
-  
-    for (const div of allDivs) {
-      // Criar chave única para o elemento
-      const elementKey = await this.getElementHierarchy(div)
-      if (elementKeys.has(elementKey)) {
-        console.log(chalk.bgRed(`Elemento duplicado: ${elementKey}`))
-        continue
-      }
-  
-      // Obter bounding box
-      const boundingBox = await div.boundingBox()
+    for (const element of parentElementHandles) {
+      const boundingBox = await element.boundingBox()
       if (!boundingBox) continue
   
       const { width, height } = boundingBox
       if (width > viewport.width || height > viewport.height) continue
-      // const minWidth = 200
-      // const minHeight = 100
-  
-      // if (width < minWidth || height < minHeight) continue
-  
-      // Armazenar elemento relevante
-      relevantElements.push(div)
-      elementKeys.add(elementKey)
+
+      relevantElements.push(element)
     }
-  
     console.log(`Elementos relevantes encontrados: ${relevantElements.length}`)
   
     // Ocultar sobreposições antes do OCR
-    console.log(chalk.bgMagenta(`Disabilitando popup`))
+    /*
+    console.log(chalk.bgMagenta('Disabilitando popup'))
     await this.page.evaluate(() => {
       const elements = document.querySelectorAll('*')
       elements.forEach((el) => {
@@ -313,56 +352,116 @@ export class Scraper {
         }
       })
     })
+    */
   
     // Processar OCR nos elementos relevantes
+    const imagesProcessed = new Set<string>()
     for (const element of relevantElements) {
-      const path = join(tmpdir(), `temp-image-${Date.now()}.png`)
-      console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${path}`))
-  
-      try {
-        const screenshot = await element.screenshot()
-        const image = await new Screenshot(screenshot).toBuffer()
-        await writeFile(path, image)
+      const timestamp = Date.now()
+      let path = join(`${timestamp}-processed.png`)
+          
+      const box = await element.boundingBox()
+      if (!box) continue
+      if (box.height === 0 || box.width === 0) continue
 
-        try {
-          const request = await axios.post(
-            'http://localhost:5000/ocr',
-            { imagePath: path },
-            { timeout: 0 }
-          )
-  
-          if (request.status !== 200) {
-            imagesHasError.set(path, element)
-            continue
-          }
-          console.log(path)
-          console.log(request.data)
-  
-          const compliances = this.findInString(request.data.result)
-          if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
-        } catch (e) {
-          if (e instanceof AxiosError) {
-            console.log(e.response?.data)
-          }
-          imagesHasError.set(path, element)
+      const elementKey = await this.getElementHierarchy(element)
+      console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${path} ${elementKey}`))
+
+      // Caso o elemento for uma imagem
+      const imgSrc = await element.evaluate((el) => el.querySelector('img')?.src)
+
+      let processedImg: Buffer | null = null
+      let originalImg: Buffer | null = null
+      if (imgSrc) {
+        if (imagesProcessed.has(imgSrc)) {
+          console.log(chalk.bgRed(`Imagem já processada: ${imgSrc}`))
+          continue
         }
-      } catch (error) {
-        console.log(chalk.bgRed(`Erro ao capturar screenshot: ${error}`))
+        console.log(chalk.bgCyan(`Imagem detectada, baixando: ${imgSrc}`))
+        
+        if (imgSrc.includes('svg')) {
+          path = join('svg/', path)
+        } else {
+          path = join('png/', path)
+        }
+        path = join(process.cwd(), path)
+
+        const response = await axios.get(imgSrc, { responseType: 'arraybuffer' })
+        const fileData = Buffer.from(response.data, 'binary')
+
+        originalImg = await new Screenshot(fileData).toBuffer().catch(() => null)
+        processedImg = await new Screenshot(fileData)
+          .greyscale()
+          .gaussian()
+          // .bgBlack()
+          .toBuffer().catch(() => null)
+        imagesProcessed.add(imgSrc)
+      } else {
+        const screenshot = await element.screenshot()
+
+        originalImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
+        processedImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
+      }
+      if (!processedImg || !originalImg) continue
+      if (!existsSync(path)) await mkdir(dirname(path), { recursive: true })
+      const pathDir = dirname(path)
+      await writeFile(path, processedImg)
+      await writeFile(join(pathDir, `${timestamp}-original.png`), originalImg)
+
+      try {
+        const request = await axios.post(
+          'http://localhost:5000/ocr',
+          { imagePath: path },
+          { timeout: 0 }
+        )
+  
+        if (request.status !== 200) {
+          imagesHasError.set(path, element)
+          continue
+        }
+        console.log(path)
+        console.log(request.data)
+  
+        const compliances = this.findInString(request.data.result)
+        if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
+      } catch (e) {
+        if (e instanceof AxiosError) {
+          console.log(e.response?.data)
+        }
+        imagesHasError.set(path, element)
+      }
+
+      try {
+        const { data } = await woker.recognize(path, {}, { text: true })
+        const imgText = data.text
+
+        console.log(imgText)
+
+        const compliances = this.findInString(imgText)
+        if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
+      } catch (e) {
+        console.log(e)
+        imagesHasError.set(path, element)
       }
     }
     
+    /*
     // Restaurar estilos originais
     await this.page.evaluate(() => {
       const elements = document.querySelectorAll('*[data-original-display]')
       elements.forEach((el) => {
         if (!(el instanceof HTMLElement)) return
-        
-        el.style.display = el.getAttribute('data-original-display') || ''
-        el.removeAttribute('data-original-display')
+    
+        const originalDisplay = el.getAttribute('data-original-display')
+        if (originalDisplay !== null) {
+          el.style.display = originalDisplay
+          el.removeAttribute('data-original-display')
+        }
       })
     })
+    */
 
-    const properties = new Set<OCR>()
+    const properties = new Set<OCRs>()
     for (const [, [compliances, element]] of imagesFiltered) {
       const box = await this.getTextSize(element)
       if (!box) continue
@@ -372,10 +471,15 @@ export class Scraper {
       const pageDimensions = await this.getSize()
 
       properties.add({
+        isHidden: await element.isHidden(),
+        isVisible: await element.isVisible(),
+        isInViewport,
+        isIntersectingViewport: await element.isIntersectingViewport(),
+        
         viewport,
         elementBox: box,
+        
         compliances,
-        isInViewport,
         distanceToTop,
         pageDimensions,
         scrollPercentage: calculateProportion(distanceToTop, pageDimensions.height),
@@ -385,40 +489,6 @@ export class Scraper {
 
     return { elements: imagesFiltered, errors: imagesHasError, properties }
   } 
-
-  async getImagesOCR () {
-    const imagesFiltered = new Map<string, Compliance[]>()
-    const imagesHasError: string[] = []
-
-    for (const path of this.images) {
-      console.log(path)
-      try {
-        const request = await axios.post(
-          'http://localhost:5000/ocr',
-          { imagePath: path },
-          { timeout: 0 }
-        )
-
-        if (request.status !== 200) {
-          imagesHasError.push(path)
-          continue
-        }
-
-        console.log(request.data)
-
-        const compliances = this.findInString(request.data.result)
-        if (compliances.length > 0) imagesFiltered.set(path, compliances)
-      } catch (e) {
-        if (e instanceof AxiosError) {
-          console.log(e.response?.data)
-        }
-        imagesHasError.push(path)
-      }
-    }
-
-    return { elements: imagesFiltered, errors: imagesHasError }
-
-  }
 
   /**
  * Coleta as propriedades de elementos selecionados da página, analisando atributos como cor do texto, cor de fundo,
@@ -746,7 +816,9 @@ export class Scraper {
       if (!existsSync(dirname(path))) await mkdir(dirname(path))
       await this.page.pdf({
         format: 'A4',
-        path: join(path, 'page.pdf')
+        path: join(path, 'page.pdf'),
+        printBackground: true,
+        displayHeaderFooter: true
       })
   
       await this.page.screenshot({ path: join(path, 'fullpage.png'), fullPage: true })
@@ -770,13 +842,13 @@ export class Scraper {
     await this.browser.close()
   }
 
-
   /**
    * Desabilita a possibilidade de clicar em URLs
    * Isso irá interceptar todos os requests e aborta-los
    *
    * @private
    */
+  /*
   private disableNavigation() {
     console.log(chalk.yellow(`Bet: ${this.url} navegação disabilitado`))
     const page = this.page
@@ -795,6 +867,7 @@ export class Scraper {
     })
     page.setRequestInterception(true)
   }
+  */
 
   // async closePopUp() {
   //   if (this.page === undefined) throw new Error('Page is undefined, try loadPage function before')
@@ -821,4 +894,40 @@ export class Scraper {
   //   }
   //   await this.page.mouse.click(moveX, moveY)
   // }
+
+  /*
+  async getImagesOCR () {
+    const imagesFiltered = new Map<string, Compliance[]>()
+    const imagesHasError: string[] = []
+
+    for (const path of this.images) {
+      console.log(path)
+      try {
+        const request = await axios.post(
+          'http://localhost:5000/ocr',
+          { imagePath: path },
+          { timeout: 0 }
+        )
+
+        if (request.status !== 200) {
+          imagesHasError.push(path)
+          continue
+        }
+
+        console.log(request.data)
+
+        const compliances = this.findInString(request.data.result)
+        if (compliances.length > 0) imagesFiltered.set(path, compliances)
+      } catch (e) {
+        if (e instanceof AxiosError) {
+          console.log(e.response?.data)
+        }
+        imagesHasError.push(path)
+      }
+    }
+
+    return { elements: imagesFiltered, errors: imagesHasError }
+
+  }
+  */
 }

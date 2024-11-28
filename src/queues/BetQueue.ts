@@ -97,7 +97,7 @@ export class BetQueue {
       const { properties: propertiesOCR, elements: elementsOCR } = await scraper.getProprietiesOCR()
 
       for (const [imagePath] of elementsOCR) {
-        const path = join(imagePath, '/ocr/')
+        const path = join(saveDir, '/ocr/')
         const imageName = basename(imagePath)
         console.log(chalk.bgWhite(`Salvando Imagem em: ${join(path, imageName)}`))
 
@@ -131,7 +131,7 @@ export class BetQueue {
         propertiesOCR
       })
     } catch (error) {
-      await scraper?.browser.close()
+      await scraper?.destroy()
       console.error(`Erro no Job ID ${job.id}:`, error)
       done(error as Error)
     }
@@ -145,6 +145,7 @@ export class BetQueue {
 
     task.status = 'completed'
     task.properties = properties
+    task.ocrs = OCRs
     task.finishedAt = new Date()
     task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
     task.save()
@@ -169,6 +170,7 @@ export class BetQueue {
   }
 
   static async onFailed(job: Job<BetQueueType>, error: Error) {
+    console.error(error)
     console.error(`Job ID ${job.id} falhou.`)
     const task = await Task.findOne({
       where: { uuid: job.data.id },

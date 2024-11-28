@@ -22,6 +22,12 @@ export class OCR extends BaseEntity {
       distanceToTop!: number
   
     @Column('bool')
+      isIntersectingViewport!: boolean
+    @Column('bool')
+      isVisible!: boolean
+    @Column('bool')
+      isHidden!: boolean
+    @Column('bool')
       isInViewport!: boolean
 
     @Column('simple-json', {

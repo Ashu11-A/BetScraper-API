@@ -16,7 +16,6 @@ export async function findBackgroundColor(
       return parent instanceof Element ? parent : null
     }) as ElementHandle | null
   }
-  
 
   while (currentElement) {
     const { backgroundColor, opacity } = await currentElement.evaluate((el) => {

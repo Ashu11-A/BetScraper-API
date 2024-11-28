@@ -2,6 +2,7 @@ import { BaseEntity, Column, CreateDateColumn, Entity, ManyToOne, OneToMany, Pri
 import Bet from './Bet.js'
 import { Property } from './Property.js'
 import { User } from './User.js'
+import { OCR } from './OCR.js'
 
 enum StatusTask {
   Scheduled = 'scheduled',
@@ -24,7 +25,9 @@ export class Task extends BaseEntity {
     user?: Relation<User>
   @OneToMany(() => Property, (property) => property.task, { nullable: true})
     properties?: Relation<Property[]>
-  
+  @OneToMany(() => Property, (property) => property.task, { nullable: true})
+    ocrs?: Relation<OCR[]>
+
   @Column({
     type: 'enum',
     enum: StatusTask,

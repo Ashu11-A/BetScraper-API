@@ -15,6 +15,7 @@ import { Screenshot } from './screenshots.js'
 
 import axios, { AxiosError } from 'axios'
 import { createWorker, Worker } from 'tesseract.js'
+import { OCR } from './ocr.js'
 const woker: Worker = await createWorker('por', 2, { gzip: true })
 /**
  * Tamanho da viewport da página.
@@ -114,36 +115,35 @@ export class Scraper {
 
     page.on('response', async (response) => {
       const url = response.url()
-      function extractImageName(url: string): string {
-        const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
-        const imagePathMatch = decodedUrl.match(/url=(.*)&w=/) // Extrai o valor do parâmetro `url`
-        
-        if (imagePathMatch && imagePathMatch[1]) {
-          const fullPath = imagePathMatch[1]
-          return fullPath.split('/').pop() || '' // Obtém apenas o nome do arquivo
-        }
     
-        return '' // Retorna vazio caso não encontre a imagem
+      function extractImageName(url: string): string {
+        try {
+          const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
+          const segments = decodedUrl.split('/') // Divide a URL em segmentos
+          return segments.pop() || '' // Retorna o último segmento como o nome do arquivo
+        } catch (error) {
+          console.error(`Erro ao extrair o nome da imagem: ${error}`)
+          return ''
+        }
       }
-
+    
       if (response.request().resourceType() === 'image') {
         const file = await response.buffer()
-      
+    
         const fileName = extractImageName(url)
-        console.log(fileName)
-
         if (!fileName) {
           console.log(`Esse link não há o nome da imagem: ${url}`)
           return
         }
-        // if(!['png', 'jpeg', 'jpg', 'svg'].some((format) => fileName.endsWith(format))) return
+    
         console.log(chalk.bgBlue(`⬇️ Fazendo o Download: ${url}`))
-
+    
         const filePath = resolve(tmpdir(), fileName)
         await writeFile(filePath, file)
         this.images.push(filePath)
       }
     })
+    
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
     await page.setCacheEnabled(true)
@@ -240,29 +240,34 @@ export class Scraper {
   }
 
   findInString(text: string) {
+    // Pré-processamento do texto
+    const normalizedText = text.replace(/\s+/g, '').toLowerCase()
+    
+    console.log(normalizedText)
     const compliances: Compliance[] = []
-
+  
     for (const compliance of this.compliances) {
-      if (text.includes(compliance.value)) {
+      if (normalizedText.includes(compliance.value.toLowerCase())) {
         console.log(chalk.bgBlue(`Palavra ${compliance.value} encontrada`))
         compliances.push(compliance)
       }
     }
-
+  
     console.log(chalk.yellow(`Bet: ${this.url} ${compliances.length} strings encontradas`))
     return compliances
   }
-
+  
   async getProprietiesOCR() {
+    console.log(chalk.redBright('Rodando OCR'))
     if (!this.page) {
       throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
     }
-    const relevantElements: Array<ElementHandle<Element>> = []
-    const elementKeys = new Set<string>()
     const imagesFiltered = new Map<string, [Compliance[], ElementHandle<Element>]>()
     const imagesHasError =  new Map<string, ElementHandle<Element>>()
 
-    console.log(chalk.redBright('Rodando OCR'))
+    const elementKeys = new Set<string>()
+    const relevantElements: Array<ElementHandle<Element>> = []
+
   
     // Obter todos os elementos `div` na página
     const allDivs = await this.page.$$('div')
@@ -281,11 +286,11 @@ export class Scraper {
       if (!boundingBox) continue
   
       const { width, height } = boundingBox
-      const minWidth = 200
-      const minHeight = 100
-  
-      if (width < minWidth || height < minHeight) continue
       if (width > viewport.width || height > viewport.height) continue
+      // const minWidth = 200
+      // const minHeight = 100
+  
+      // if (width < minWidth || height < minHeight) continue
   
       // Armazenar elemento relevante
       relevantElements.push(div)
@@ -295,6 +300,7 @@ export class Scraper {
     console.log(`Elementos relevantes encontrados: ${relevantElements.length}`)
   
     // Ocultar sobreposições antes do OCR
+    console.log(chalk.bgMagenta(`Disabilitando popup`))
     await this.page.evaluate(() => {
       const elements = document.querySelectorAll('*')
       elements.forEach((el) => {
@@ -311,6 +317,7 @@ export class Scraper {
     // Processar OCR nos elementos relevantes
     for (const element of relevantElements) {
       const path = join(tmpdir(), `temp-image-${Date.now()}.png`)
+      console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${path}`))
   
       try {
         const screenshot = await element.screenshot()
@@ -328,6 +335,8 @@ export class Scraper {
             imagesHasError.set(path, element)
             continue
           }
+          console.log(path)
+          console.log(request.data)
   
           const compliances = this.findInString(request.data.result)
           if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
@@ -353,7 +362,28 @@ export class Scraper {
       })
     })
 
-    return { elements: imagesFiltered, errors: imagesHasError }
+    const properties = new Set<OCR>()
+    for (const [, [compliances, element]] of imagesFiltered) {
+      const box = await this.getTextSize(element)
+      if (!box) continue
+
+      const distanceToTop = await this.getDistanceToTop(element)
+      const isInViewport = distanceToTop <= viewport.height
+      const pageDimensions = await this.getSize()
+
+      properties.add({
+        viewport,
+        elementBox: box,
+        compliances,
+        isInViewport,
+        distanceToTop,
+        pageDimensions,
+        scrollPercentage: calculateProportion(distanceToTop, pageDimensions.height),
+        proportionPercentage: calculateProportion(box.width, viewport.width),
+      })
+    }
+
+    return { elements: imagesFiltered, errors: imagesHasError, properties }
   } 
 
   async getImagesOCR () {
@@ -385,6 +415,9 @@ export class Scraper {
         imagesHasError.push(path)
       }
     }
+
+    return { elements: imagesFiltered, errors: imagesHasError }
+
   }
 
   /**
@@ -409,28 +442,6 @@ export class Scraper {
         prop.elementBox.width === newProperty.elementBox.width &&
         prop.distanceToTop === newProperty.distanceToTop
       )
-    }
-
-    const getTextSize = async (element: ElementHandle<Element>) => {
-      return await element.evaluate((el) => {
-        const range = document.createRange()
-        const textNode = el.firstChild
-    
-        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
-          return null // Sem texto direto no elemento
-        }
-    
-        // Define o range para abranger apenas o texto do elemento
-        range.selectNodeContents(textNode)
-    
-        const rect = range.getBoundingClientRect()
-        return {
-          width: rect.width,
-          height: rect.height,
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX,
-        }
-      })
     }
     
     const nextChildren = async (element: ElementHandle<Element>) => {
@@ -476,11 +487,11 @@ export class Scraper {
         const updatedText = await element.evaluate((el) => el.textContent)
         if (!updatedText) continue
     
-        const box = await getTextSize(element)
+        const box = await this.getTextSize(element)
         if (!box) continue
     
         // Calcular distância do topo
-        const distanceToTop = await getDistanceToTop(element)
+        const distanceToTop = await this.getDistanceToTop(element)
     
         // Processar estilo e contraste
         const { color: textColor, opacity } = await element.evaluate((el) => {
@@ -548,7 +559,29 @@ export class Scraper {
     }
   }
 
-  async getDistanceToTop = async (element: ElementHandle<Element>) => {
+  async getTextSize (element: ElementHandle<Element>) {
+    return await element.evaluate((el) => {
+      const range = document.createRange()
+      const textNode = el.firstChild
+  
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+        return null // Sem texto direto no elemento
+      }
+  
+      // Define o range para abranger apenas o texto do elemento
+      range.selectNodeContents(textNode)
+  
+      const rect = range.getBoundingClientRect()
+      return {
+        width: rect.width,
+        height: rect.height,
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX,
+      }
+    })
+  }
+
+  async getDistanceToTop (element: ElementHandle<Element>) {
     return await element.evaluate((el) => {
       const rect = el.getBoundingClientRect()
       const scrollTop = window.scrollY || document.documentElement.scrollTop
@@ -556,7 +589,7 @@ export class Scraper {
     })
   }
 
-  async getElementHierarchy (element: ElementHandle<Element>) => {
+  async getElementHierarchy (element: ElementHandle<Element>) {
     return await element.evaluate((el) => {
       const getPath = (node: Element | null): string => {
         if (!node || node.tagName.toLowerCase() === 'html') return 'html'

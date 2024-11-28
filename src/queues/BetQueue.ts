@@ -10,9 +10,12 @@ import { Scraper } from '@/scraper/search.js'
 import { DoneCallback, Job, JobOptions } from 'bull'
 import chalk from 'chalk'
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { nanoid } from 'nanoid'
 import { Property } from '@/database/entity/Property.js'
+import { cp } from 'fs/promises'
+import { OCRs } from '../scraper/ocr.js'
+import { OCR } from '../database/entity/OCR.js'
 
 export type AddBetQueue = {
   bet: Bet,
@@ -29,6 +32,7 @@ export type BetResult = {
   task: Task
   // compliances: number[]
   properties: Properties[]
+  propertiesOCR: OCRs[]
 }
 
 export class BetQueue {
@@ -76,7 +80,7 @@ export class BetQueue {
     }).save()
   
     try {
-      const saveDir = join(storagePath, `/tasks/${task.id}/bets/${task.bet.id}/${task.createdAt}`)
+      const saveDir = join(storagePath, `/tasks/${task.id}/bets/${task.bet.id}/${new Date(task.createdAt).getTime()}`)
       await mkdir(saveDir, { recursive: true })
 
       const compliances = await Compliance.find()
@@ -89,35 +93,43 @@ export class BetQueue {
       const initImage = await scraper.getScreenshot()
       if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
       await scraper.scan()
-      await scraper.getImagesOCR()
-      const { elements, errors } = await scraper.getProprietiesOCR()
+      // await scraper.getImagesOCR()
+      const { properties: propertiesOCR, elements: elementsOCR } = await scraper.getProprietiesOCR()
 
-      // // await scraper.closePopUp()
-      // const { elements, properties } = await scraper.getProprieties()
-      // const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
+      for (const [imagePath] of elementsOCR) {
+        const path = join(imagePath, '/ocr/')
+        const imageName = basename(imagePath)
+        console.log(chalk.bgWhite(`Salvando Imagem em: ${join(path, imageName)}`))
+
+        cp(imagePath, join(path, imageName))
+      }
+
+      // await scraper.closePopUp()
+      const { elements, properties } = await scraper.getProprieties()
+      const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
   
-      // for (const [index, evidence] of screenshots) {
-      //   await writeFile(join(saveDir, `/${index}.png`), evidence.image)
-      // }
+      for (const [index, evidence] of screenshots) {
+        await writeFile(join(saveDir, `/${index}.png`), evidence.image)
+      }
 
-      // const metadata: (Properties & { pathName: string })[] = []
-      // for (const [index] of (screenshots.entries())) {
-      //   const prop = properties[index]
+      const metadata: (Properties & { pathName: string })[] = []
+      for (const [index] of (screenshots.entries())) {
+        const prop = properties[index]
 
-      //   metadata.push({
-      //     ...prop,
-      //     pathName: `${index}.png`
-      //   })
-      // }
-      // await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
+        metadata.push({
+          ...prop,
+          pathName: `${index}.png`
+        })
+      }
+      await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
         
-      // await scraper.destroy()
-      // // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
-      // done(null, {
-      //   task,
-      //   properties
-      // })
-      done()
+      await scraper.destroy()
+      // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
+      done(null, {
+        task,
+        properties,
+        propertiesOCR
+      })
     } catch (error) {
       await scraper?.browser.close()
       console.error(`Erro no Job ID ${job.id}:`, error)
@@ -129,6 +141,7 @@ export class BetQueue {
     console.log(`Job ID ${job.id} completado.`)
     const task = await Task.findOneByOrFail({ id: result.task.id })
     const properties = await Promise.all(result.properties.map(async (property) => await Property.create({ ...property, task }).save()))
+    const OCRs = await Promise.all(result.properties.map(async (property) => await OCR.create({ ...property, task }).save()))
 
     task.status = 'completed'
     task.properties = properties

@@ -79,6 +79,7 @@
     "jsonwebtoken": "^9.0.2",
     "mysql": "^2.18.1",
     "nanoid": "^5.0.8",
+    "p-limit": "^6.1.0",
     "pino-pretty": "^11.3.0",
     "puppeteer": "^23.6.1",
     "redis": "^4.7.0",

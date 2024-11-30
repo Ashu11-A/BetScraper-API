@@ -6,6 +6,7 @@ export async function registerCrons() {
     '0 */12 * * *',  // A cada 12 horas
     '0 */6 * * *',   // A cada 6 horas
     '0 */3 * * *',    // A cada 3 horas
+    '0 0 * * 2' // Toda a terça-feira
   ]
   const register = async (cron: string) => {
     if (!(await Cron.existsBy({ expression: cron }))) {

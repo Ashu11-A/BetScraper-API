@@ -25,10 +25,17 @@ pip install -r requirements.txt
 
 # WSL2
 # export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
-python api.py
+python3 api.py
 ```
 
 # Saving current Libs
 ```sh
 pip freeze > requirements.txt
+```
+
+# Correção de erros [job.id is null]
+
+```sh
+# https://stackoverflow.com/questions/33115325/how-to-set-redis-max-memory
+
 ```

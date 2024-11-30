@@ -1,5 +1,5 @@
 import Compliance from '@/database/entity/Compliance.js'
-import { Viewport } from 'puppeteer'
+import { BoundingBox, Viewport } from 'puppeteer'
 
 export class OCRs {
   compliances: Compliance[]
@@ -25,12 +25,7 @@ export class OCRs {
    * Localização do elemento
    */
   distanceToTop: number
-  elementBox: {
-      width: number;
-      height: number;
-      top: number;
-      left: number;
-  }
+  elementBox: BoundingBox
   pageDimensions: {
     width: number;
     height: number;

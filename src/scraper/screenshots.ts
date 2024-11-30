@@ -32,7 +32,7 @@ export class Screenshot {
   async resize() {
     const metadata = await this.processedImg.metadata()
 
-    console.log(metadata)
+    // console.log(metadata)
     if (metadata.format === 'svg') {
       if (metadata.width! <= 512 && metadata.height! <= 512) return
 

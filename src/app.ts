@@ -20,9 +20,9 @@ await Database.initialize()
 await registerCrons()
 await registerCompliances()
 await registerBets()
-// await registerScheduled()
-
 BetQueue.initialize()
+
+// await registerScheduled()
 
 fastify.init()
 await Router.register()

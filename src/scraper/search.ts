@@ -69,7 +69,6 @@ export class Scraper {
   async loadPage(): Promise<Scraper> {
     console.log(chalk.yellow(`Bet: ${this.url} entrou na fila de processamento`))
     this.browser = await puppeteer.launch({
-      headless: false,
       defaultViewport: {
         height: viewport.height,
         width: viewport.width
@@ -279,14 +278,15 @@ export class Scraper {
   
   async getProprietiesOCR() {
     if (!this.page) throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
-    if (existsSync(join(process.cwd(), 'png'))) await rm(join(process.cwd(), 'png'), { recursive: true })
-    if (existsSync(join(process.cwd(), 'svg'))) await rm(join(process.cwd(), 'svg'), { recursive: true })
+    if (existsSync(join(process.cwd(), 'images'))) await rm(join(process.cwd(), 'images'), { recursive: true })
         
     console.log(chalk.redBright('Rodando OCR'))
 
     const imagesFiltered = new Map<string, [Compliance[], ElementHandle<Element>]>()
     const imagesHasError =  new Map<string, ElementHandle<Element>>()
     const relevantElements: Array<ElementHandle<Element>> = []
+    const imagesProcessed = new Set<string>()
+    const properties: OCRs[] = []
 
     const elements = await this.page.$$('*')
     const elementsWithImageOrSVG = (await Promise.all(
@@ -354,95 +354,109 @@ export class Scraper {
     */
   
     // Processar OCR nos elementos relevantes
-    const imagesProcessed = new Set<string>()
+    // const promises: Promise<void>[] = []
+    let counter = 0
     for (const element of relevantElements) {
-      const timestamp = Date.now()
-      let path = join(`${timestamp}-processed.png`)
+      const number = counter++
+      let path = join(process.cwd(), '/images/')
+      const imageName = `${number}-processed.png`
+      const originalName = `${counter}-original.png`
           
       const box = await element.boundingBox()
       if (!box) continue
       if (box.height === 0 || box.width === 0) continue
 
       const elementKey = await this.getElementHierarchy(element)
-      console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${path} ${elementKey}`))
-
       // Caso o elemento for uma imagem
       const imgSrc = await element.evaluate((el) => el.querySelector('img')?.src)
 
       let processedImg: Buffer | null = null
       let originalImg: Buffer | null = null
+
+      // const processImage = async () => {
+      if (!imgSrc?.includes('svg')) continue
       if (imgSrc) {
         if (imagesProcessed.has(imgSrc)) {
           console.log(chalk.bgRed(`Imagem já processada: ${imgSrc}`))
           continue
         }
+        imagesProcessed.add(imgSrc)
         console.log(chalk.bgCyan(`Imagem detectada, baixando: ${imgSrc}`))
         
         if (imgSrc.includes('svg')) {
-          path = join('svg/', path)
+          path = join(path, 'svg/')
         } else {
-          path = join('png/', path)
+          path = join(path, 'png/')
         }
-        path = join(process.cwd(), path)
 
         const response = await axios.get(imgSrc, { responseType: 'arraybuffer' })
         const fileData = Buffer.from(response.data, 'binary')
 
         originalImg = await new Screenshot(fileData).toBuffer().catch(() => null)
         processedImg = await new Screenshot(fileData)
-          .greyscale()
+        // .greyscale()
           .gaussian()
-          // .bgBlack()
+        // .bgBlack()
           .toBuffer().catch(() => null)
-        imagesProcessed.add(imgSrc)
       } else {
         const screenshot = await element.screenshot()
 
         originalImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
         processedImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
+        path = join(path, '/elements/' )
       }
       if (!processedImg || !originalImg) continue
-      if (!existsSync(path)) await mkdir(dirname(path), { recursive: true })
-      const pathDir = dirname(path)
-      await writeFile(path, processedImg)
-      await writeFile(join(pathDir, `${timestamp}-original.png`), originalImg)
+
+      if (!existsSync(path)) await mkdir(path, { recursive: true })
+
+      const imagePath = join(path, imageName)
+    
+      await writeFile(imagePath, processedImg)
+      await writeFile(join(path, originalName), originalImg)
+
+      console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${imagePath} ${elementKey}`))
 
       try {
         const request = await axios.post(
           'http://localhost:5000/ocr',
-          { imagePath: path },
+          { imagePath: imagePath },
           { timeout: 0 }
         )
-  
+        
+        if (request.data === undefined) throw new Error('API OCR está desativada!')
         if (request.status !== 200) {
-          imagesHasError.set(path, element)
+          imagesHasError.set(imagePath, element)
           continue
         }
         console.log(path)
         console.log(request.data)
   
-        const compliances = this.findInString(request.data.result)
-        if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
-      } catch (e) {
-        if (e instanceof AxiosError) {
-          console.log(e.response?.data)
+        let compliances = this.findInString(request.data.result)
+        if (compliances.length > 0) {
+          imagesFiltered.set(imagePath, [compliances, element])
+          continue
         }
-        imagesHasError.set(path, element)
-      }
-
-      try {
+          
+        // Caso não ache nenhum texto, procure com teserract
         const { data } = await woker.recognize(path, {}, { text: true })
         const imgText = data.text
 
         console.log(imgText)
 
-        const compliances = this.findInString(imgText)
-        if (compliances.length > 0) imagesFiltered.set(path, [compliances, element])
+        compliances = this.findInString(imgText)
+        if (compliances.length > 0) imagesFiltered.set(imagePath, [compliances, element])
       } catch (e) {
-        console.log(e)
-        imagesHasError.set(path, element)
+        if (e instanceof AxiosError) {
+          console.log(e.response?.data)
+        }
+        imagesHasError.set(imagePath, element)
       }
     }
+
+    //promises.push(processImage())
+    //}
+
+    //await Promise.all(promises)
     
     /*
     // Restaurar estilos originais
@@ -460,16 +474,18 @@ export class Scraper {
     })
     */
 
-    const properties = new Set<OCRs>()
     for (const [, [compliances, element]] of imagesFiltered) {
-      const box = await this.getTextSize(element)
-      if (!box) continue
+      const box = await element.boundingBox()
+      if (!box) {
+        console.log(chalk.bgRed('O componente em getProprietiesOCR tem size 0'))
+        continue
+      }
 
       const distanceToTop = await this.getDistanceToTop(element)
       const isInViewport = distanceToTop <= viewport.height
       const pageDimensions = await this.getSize()
 
-      properties.add({
+      properties.push({
         isHidden: await element.isHidden(),
         isVisible: await element.isVisible(),
         isInViewport,
@@ -836,9 +852,9 @@ export class Scraper {
    * @returns {Promise<void>}
    */
   async destroy(): Promise<void> {
-    console.log(chalk.red(`Bet: ${this.url} memória desalocada`))
     await this.page?.close()
     await this.browser.close()
+    console.log(chalk.red(`Bet: ${this.url} memória desalocada`))
   }
 
   /**

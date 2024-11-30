@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm'
 
-export class SchemaUpdate1732821541019 implements MigrationInterface {
-  name = 'SchemaUpdate1732821541019'
+export class SchemaUpdate1732892095001 implements MigrationInterface {
+  name = 'SchemaUpdate1732892095001'
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('CREATE TABLE `compliances` (`id` int NOT NULL AUTO_INCREMENT, `value` text NOT NULL, `type` enum (\'bunus\', \'advisement\', \'legalAgeAdvisement\') NOT NULL, `updatedAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), `createdAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), PRIMARY KEY (`id`)) ENGINE=InnoDB')

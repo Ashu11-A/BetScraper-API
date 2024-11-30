@@ -16,6 +16,7 @@ import { Property } from '@/database/entity/Property.js'
 import { cp } from 'fs/promises'
 import { OCRs } from '../scraper/ocr.js'
 import { OCR } from '../database/entity/OCR.js'
+import { existsSync } from 'fs'
 
 export type AddBetQueue = {
   bet: Bet,
@@ -39,9 +40,7 @@ export class BetQueue {
   static queue = new Queue<BetQueueType>('bets')
   static initialized = false
 
-  constructor() {
-    BetQueue.initialize()
-  }
+  constructor() {}
 
   async addToQueue({ bet, user, cron }: AddBetQueue) {
     const id = nanoid()
@@ -52,6 +51,7 @@ export class BetQueue {
       removeOnFail: cron === undefined ? true : false
     } satisfies JobOptions
 
+    if (cron) await BetQueue.queue.add({ bet, user, id }, { jobId: `${bet.id}-${nanoid()}` })
     return await BetQueue.queue.add({ bet, user, id }, options)
   }
 
@@ -60,11 +60,11 @@ export class BetQueue {
     console.log('Initialize')
     BetQueue.initialized = true
     BetQueue.queue.process(this.process)
-    BetQueue.queue.on('completed', this.onCompleted)
+    // BetQueue.queue.on('completed', this.onCompleted)
     BetQueue.queue.on('waiting', (jobId) => console.log(chalk.red(`Task: ${jobId} está esperando`)))
     BetQueue.queue.on('removed', (job) => console.log(chalk.red(`Task: ${job.data.bet.name} foi removido`)))
-    BetQueue.queue.on('paused', this.onPaused)
-    BetQueue.queue.on('failed', this.onFailed)
+    // BetQueue.queue.on('paused', this.onPaused)
+    // BetQueue.queue.on('failed', this.onFailed)
   }
 
   static async process(job: Job<BetQueueType>, done: DoneCallback) {
@@ -96,8 +96,12 @@ export class BetQueue {
       // await scraper.getImagesOCR()
       const { properties: propertiesOCR, elements: elementsOCR } = await scraper.getProprietiesOCR()
 
+      console.log(propertiesOCR)
+      console.log(elementsOCR)
       for (const [imagePath] of elementsOCR) {
         const path = join(saveDir, '/ocr/')
+        if (!existsSync(path)) await mkdir(path, { recursive: true })
+
         const imageName = basename(imagePath)
         console.log(chalk.bgWhite(`Salvando Imagem em: ${join(path, imageName)}`))
 
@@ -123,25 +127,39 @@ export class BetQueue {
       }
       await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
         
-      await scraper.destroy()
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
+      const propertiess = await Promise.all(properties.map(async (property) => await Property.create({ ...property, task }).save()))
+      const OCRs = await Promise.all(propertiesOCR.map(async (ocr) => await OCR.create({ ...ocr, task }).save()))
+      
+      task.status = 'completed'
+      task.properties = propertiess
+      task.ocrs = OCRs
+      task.finishedAt = new Date()
+      task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
+      await task.save()
+
+      await scraper.destroy()
+      
       done(null, {
+        /*
         task,
         properties,
-        propertiesOCR
+        propertiesOCR: Array.from(propertiesOCR.values())
+        */
       })
     } catch (error) {
-      await scraper?.destroy()
+      await writeFile(`error-job[${job.id}]-bet[${job.data.bet.id}].json`, JSON.stringify(error))
       console.error(`Erro no Job ID ${job.id}:`, error)
+      await scraper?.destroy()
       done(error as Error)
     }
   }
 
   static async onCompleted(job: Job<BetQueueType>, result: BetResult) {
-    console.log(`Job ID ${job.id} completado.`)
+    console.log(`Job ID ${job?.id ?? job.name} completado.`)
     const task = await Task.findOneByOrFail({ id: result.task.id })
     const properties = await Promise.all(result.properties.map(async (property) => await Property.create({ ...property, task }).save()))
-    const OCRs = await Promise.all(result.properties.map(async (property) => await OCR.create({ ...property, task }).save()))
+    const OCRs = await Promise.all(result.propertiesOCR.map(async (property) => await OCR.create({ ...property, task }).save()))
 
     task.status = 'completed'
     task.properties = properties
@@ -170,8 +188,22 @@ export class BetQueue {
   }
 
   static async onFailed(job: Job<BetQueueType>, error: Error) {
-    console.error(error)
+    if (!job) {
+      console.error('Job inválido ou nulo detectado no onFailed.')
+      return
+    }
+  
+    console.log(job, error)
+    if (error.message === 'job stalled more than allowable limit') {
+      try {
+        await job.remove()
+        console.log(`Job ${job.id} removido devido a erro de travamento.`)
+      } catch (err) {
+        console.error(`Erro ao remover jobId ${job.id}: ${err}`)
+      }
+    }
     console.error(`Job ID ${job.id} falhou.`)
+
     const task = await Task.findOne({
       where: { uuid: job.data.id },
       relations: ['bet'],

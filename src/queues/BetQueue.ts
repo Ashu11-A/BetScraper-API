@@ -126,7 +126,7 @@ export class BetQueue {
         })
       }
       await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
-        
+
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       const propertiess = await Promise.all(properties.map(async (property) => await Property.create({ ...property, task }).save()))
       const OCRs = await Promise.all(propertiesOCR.map(async (ocr) => await OCR.create({ ...ocr, task }).save()))
@@ -148,9 +148,18 @@ export class BetQueue {
         */
       })
     } catch (error) {
+      await scraper?.destroy()
       await writeFile(`error-job[${job.id}]-bet[${job.data.bet.id}].json`, JSON.stringify(error))
       console.error(`Erro no Job ID ${job.id}:`, error)
-      await scraper?.destroy()
+
+      if (!(error instanceof Error)) return done(error as Error)
+      console.error(`Job ID ${job.id} falhou.`)
+
+      task.errorMessage = error.message
+      task.status = 'failed'
+      task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
+      await task.save()
+
       done(error as Error)
     }
   }

@@ -4,7 +4,7 @@ import { calculateProportion } from '@/scraper/lib/proportion.js'
 import { parseRGB } from '@/scraper/lib/rgb.js'
 import chalk from 'chalk'
 import { existsSync } from 'fs'
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
@@ -12,12 +12,19 @@ import { Criteria } from './criteria.js'
 import { findBackgroundColor } from './lib/getBackgroundColor.js'
 import { Properties } from './properties.js'
 import { Screenshot } from './screenshots.js'
-
-import axios, { AxiosError } from 'axios'
-import { rm } from 'fs/promises'
-import { createWorker, Worker } from 'tesseract.js'
 import { OCRs } from './ocr.js'
+import axios, { AxiosError } from 'axios'
+import { createWorker, Worker } from 'tesseract.js'
+import pLimit from 'p-limit'
+
 const woker: Worker = await createWorker('por', 2, { gzip: true })
+const processOCRLimit = pLimit(2)
+
+type ProcessOCR = {
+  element: ElementHandle<Element>
+  imagePath: string
+}
+
 /**
  * Tamanho da viewport da página.
  * Define a resolução de visualização da página carregada no navegador.
@@ -113,40 +120,6 @@ export class Scraper {
 
     const page = await this.browser.newPage()
     this.page = page
-
-    /*
-    page.on('response', async (response) => {
-      const url = response.url()
-    
-      function extractImageName(url: string): string {
-        try {
-          const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
-          const segments = decodedUrl.split('/') // Divide a URL em segmentos
-          return segments.pop() || '' // Retorna o último segmento como o nome do arquivo
-        } catch (error) {
-          console.error(`Erro ao extrair o nome da imagem: ${error}`)
-          return ''
-        }
-      }
-    
-      if (response.request().resourceType() === 'image') {
-        const file = await response.buffer()
-    
-        const fileName = extractImageName(url)
-        if (!fileName) {
-          console.log(`Esse link não há o nome da imagem: ${url}`)
-          return
-        }
-    
-        console.log(chalk.bgBlue(`⬇️ Fazendo o Download: ${url}`))
-    
-        const filePath = resolve(tmpdir(), fileName)
-        await writeFile(filePath, file)
-        this.images.push(filePath)
-      }
-    })
-      */
-    
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
     await page.setCacheEnabled(true)
@@ -279,16 +252,14 @@ export class Scraper {
   async getProprietiesOCR() {
     if (!this.page) throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
     if (existsSync(join(process.cwd(), 'images'))) await rm(join(process.cwd(), 'images'), { recursive: true })
-        
     console.log(chalk.redBright('Rodando OCR'))
 
     const imagesFiltered = new Map<string, [Compliance[], ElementHandle<Element>]>()
     const imagesHasError =  new Map<string, ElementHandle<Element>>()
-    const relevantElements: Array<ElementHandle<Element>> = []
     const imagesProcessed = new Set<string>()
     const properties: OCRs[] = []
-
     const elements = await this.page.$$('*')
+
     const elementsWithImageOrSVG = (await Promise.all(
       elements.map(async (el) => {
         const hasChildImageOrSvg = await el.evaluate(
@@ -300,179 +271,147 @@ export class Scraper {
           }
         )
         
-        if (hasChildImageOrSvg !== null) {
-          console.log(chalk.bgGreen(`Elemento ${await this.getElementHierarchy(el)} contém uma imagem ou svg de interesse!`))
+        if (!hasChildImageOrSvg) return null
+        console.log(chalk.bgGreen(`Elemento ${await this.getElementHierarchy(el)} contém uma imagem ou svg de interesse!`))
           
-          if (hasChildImageOrSvg === 'svg') return await this.getParentElementSafely(el)
-          return el
-        }
-        
-        return null
-      }))).filter((el) => el !== null)
-      
-    // const elementKeys = new Set<string>()
-    const parentElementHandles = (await Promise.all(
-      elementsWithImageOrSVG.map(async (el) => {
-        /*
-        const elementKey = await this.getElementHierarchy(el)
-        if (elementKeys.has(elementKey)) {
-        // console.log(chalk.bgRed(`Elemento duplicado: ${elementKey}`));
-          return null
-        }
-    
-        elementKeys.add(elementKey)
-        */
+        if (hasChildImageOrSvg === 'svg') return await this.getParentElementSafely(el)
         return el
       }))).filter((el) => el !== null)
-  
-    for (const element of parentElementHandles) {
-      const boundingBox = await element.boundingBox()
-      if (!boundingBox) continue
-  
-      const { width, height } = boundingBox
-      if (width > viewport.width || height > viewport.height) continue
+    console.log(`Elementos relevantes encontrados: ${elementsWithImageOrSVG.length}`)
 
-      relevantElements.push(element)
-    }
-    console.log(`Elementos relevantes encontrados: ${relevantElements.length}`)
-  
-    // Ocultar sobreposições antes do OCR
-    /*
-    console.log(chalk.bgMagenta('Disabilitando popup'))
-    await this.page.evaluate(() => {
-      const elements = document.querySelectorAll('*')
-      elements.forEach((el) => {
-        if (!(el instanceof HTMLElement)) return
-  
-        const style = window.getComputedStyle(el)
-        if (style.position === 'fixed' || style.position === 'absolute') {
-          el.setAttribute('data-original-display', style.display)
-          el.style.display = 'none'
-        }
-      })
-    })
-    */
-  
-    // Processar OCR nos elementos relevantes
-    // const promises: Promise<void>[] = []
-    let counter = 0
-    for (const element of relevantElements) {
-      const number = counter++
-      let path = join(process.cwd(), '/images/')
-      const imageName = `${number}-processed.png`
-      const originalName = `${counter}-original.png`
-          
+    const processElement = async (element: ElementHandle<Element>, index: number) => {
       const box = await element.boundingBox()
-      if (!box) continue
-      if (box.height === 0 || box.width === 0) continue
+      if (!box || box.height === 0 || box.width === 0) return
+      if (box.width > viewport.width || box.height > viewport.height) return
 
       const elementKey = await this.getElementHierarchy(element)
-      // Caso o elemento for uma imagem
-      const imgSrc = await element.evaluate((el) => el.querySelector('img')?.src)
+      const imageURl = await element.evaluate((el) => el.querySelector('img')?.src)
 
+      const imageName = `${index}-processed.png` as const
+      const originalName = `${index}-original.png` as const
+      
+      let path = join(process.cwd(), '/images/')
       let processedImg: Buffer | null = null
       let originalImg: Buffer | null = null
 
-      // const processImage = async () => {
-      if (!imgSrc?.includes('svg')) continue
-      if (imgSrc) {
-        if (imagesProcessed.has(imgSrc)) {
-          console.log(chalk.bgRed(`Imagem já processada: ${imgSrc}`))
-          continue
-        }
-        imagesProcessed.add(imgSrc)
-        console.log(chalk.bgCyan(`Imagem detectada, baixando: ${imgSrc}`))
-        
-        if (imgSrc.includes('svg')) {
-          path = join(path, 'svg/')
-        } else {
-          path = join(path, 'png/')
-        }
-
-        const response = await axios.get(imgSrc, { responseType: 'arraybuffer' })
-        const fileData = Buffer.from(response.data, 'binary')
-
-        originalImg = await new Screenshot(fileData).toBuffer().catch(() => null)
-        processedImg = await new Screenshot(fileData)
-        // .greyscale()
-          .gaussian()
-        // .bgBlack()
-          .toBuffer().catch(() => null)
-      } else {
-        const screenshot = await element.screenshot()
-
-        originalImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
-        processedImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
-        path = join(path, '/elements/' )
+      if (imagesProcessed.has(imageURl ?? elementKey)) {
+        console.log(chalk.bgRed(`Imagem já processada: ${imageURl ?? elementKey}`))
+        return
       }
-      if (!processedImg || !originalImg) continue
+      imagesProcessed.add(imageURl ?? elementKey)
 
+      try {
+        if (imageURl) {
+          console.log(chalk.bgCyan(`Imagem detectada, baixando: ${imageURl}`))
+          const response = await axios.get(imageURl, { responseType: 'arraybuffer' })
+          const fileData = Buffer.from(response.data, 'binary')
+        
+          if (imageURl.includes('svg')) {
+            path = join(path, 'svg/')
+          } else {
+            path = join(path, 'png/')
+          }
+
+          originalImg = await new Screenshot(fileData).toBuffer().catch(() => null)
+          processedImg = await new Screenshot(fileData)
+            .gaussian()
+            .toBuffer().catch(() => null)
+        } else {
+          const screenshot = await element.screenshot()
+          
+          path = join(path, '/elements/' )
+          originalImg = await new Screenshot(screenshot).toBuffer().catch(() => null)
+          processedImg = await new Screenshot(screenshot)
+            .gaussian()
+            .toBuffer().catch(() => null)
+        }
+      } catch (err) {
+        console.log(err)
+        processedImg = null
+        originalImg = null
+      }
+      if (!processedImg || !originalImg) return
       if (!existsSync(path)) await mkdir(path, { recursive: true })
 
       const imagePath = join(path, imageName)
-    
       await writeFile(imagePath, processedImg)
       await writeFile(join(path, originalName), originalImg)
 
       console.log(chalk.bgWhite(`Fazendo o OCR da imagem: ${imagePath} ${elementKey}`))
-
-      try {
+    
+      const processOCR_2 = async ({ element, imagePath }: ProcessOCR) => {
         const request = await axios.post(
           'http://localhost:5000/ocr',
-          { imagePath: imagePath },
+          { imagePath },
           { timeout: 0 }
         )
-        
-        if (request.data === undefined) throw new Error('API OCR está desativada!')
+    
+        if (!request.data) throw new Error('Resposta da API OCR está vazia!')
         if (request.status !== 200) {
+          console.error(`Erro na API OCR. Status: ${request.status}`)
           imagesHasError.set(imagePath, element)
-          continue
+          return
         }
-        console.log(path)
+    
         console.log(request.data)
-  
-        let compliances = this.findInString(request.data.result)
-        if (compliances.length > 0) {
-          imagesFiltered.set(imagePath, [compliances, element])
-          continue
-        }
-          
-        // Caso não ache nenhum texto, procure com teserract
-        const { data } = await woker.recognize(path, {}, { text: true })
-        const imgText = data.text
-
-        console.log(imgText)
-
-        compliances = this.findInString(imgText)
-        if (compliances.length > 0) imagesFiltered.set(imagePath, [compliances, element])
-      } catch (e) {
-        if (e instanceof AxiosError) {
-          console.log(e.response?.data)
-        }
-        imagesHasError.set(imagePath, element)
+    
+        const compliances = this.findInString(request.data.result)
+        save({ compliances, element, imagePath })
       }
+
+      const processTeserract = async ({ element, imagePath }: ProcessOCR) => {
+        const { data } = await woker.recognize(imagePath, {}, { text: true })
+    
+        if (!data.text) {
+          console.warn(`Nenhum texto encontrado no Tesseract para: ${imagePath}`)
+          return
+        }
+        console.log(data.text)
+    
+        const compliances = this.findInString(data.text)
+        save({ compliances, element, imagePath })
+      }
+
+      const save = ({ compliances, element, imagePath }: ProcessOCR & { compliances: Compliance[] }) => {
+        if (compliances.length === 0) return
+    
+        const savedImage = imagesFiltered.get(imagePath)
+        if (savedImage) {
+          const [savedCompliances] = savedImage
+    
+          for (const compliance of compliances) {
+            if (!savedCompliances.some((savedCompliance) => savedCompliance.value === compliance.value)) {
+              savedCompliances.push(compliance)
+            }
+          }
+    
+          imagesFiltered.set(imagePath, [savedCompliances, element])
+          return
+        }
+
+        imagesFiltered.set(imagePath, [compliances, element])
+      }
+    
+      // allSettled fará com que mesmo se um falhar, ele continuará a processar as imagens na outra função
+      const results = await Promise.allSettled([processOCR_2({ element, imagePath }), processTeserract({ element, imagePath })])
+      results.forEach((result, index) => {
+        if (!(result.status === 'rejected')) return
+
+        if (result.reason instanceof AxiosError) {
+          console.error(`Erro no Axios na ${index === 0 ? 'OCR' : 'Tesseract'}: ${result.reason.response?.data || result.reason.message}`)
+        } else if (result.reason instanceof Error) {
+          console.error(`Erro na ${index === 0 ? 'OCR' : 'Tesseract'}: ${result.reason.message}`)
+        } else {
+          console.error(`Erro desconhecido na ${index === 0 ? 'OCR' : 'Tesseract'}: ${result.reason}`)
+        }
+    
+        imagesHasError.set(imagePath, element)
+      })
     }
 
-    //promises.push(processImage())
-    //}
-
-    //await Promise.all(promises)
-    
-    /*
-    // Restaurar estilos originais
-    await this.page.evaluate(() => {
-      const elements = document.querySelectorAll('*[data-original-display]')
-      elements.forEach((el) => {
-        if (!(el instanceof HTMLElement)) return
-    
-        const originalDisplay = el.getAttribute('data-original-display')
-        if (originalDisplay !== null) {
-          el.style.display = originalDisplay
-          el.removeAttribute('data-original-display')
-        }
-      })
-    })
-    */
+    // Executa 2 OCRs simultaneamente
+    const tasks = elementsWithImageOrSVG.map((element, index) => processOCRLimit(() => processElement(element, index)))
+    await Promise.all(tasks)
 
     for (const [, [compliances, element]] of imagesFiltered) {
       const box = await element.boundingBox()
@@ -573,7 +512,7 @@ export class Scraper {
         if (!updatedText) continue
     
         const box = await this.getTextSize(element)
-        if (!box) continue
+        if (!box || box.width === 0 || box.height === 0) continue
     
         // Calcular distância do topo
         const distanceToTop = await this.getDistanceToTop(element)
@@ -633,10 +572,8 @@ export class Scraper {
         console.log(chalk.bgMagenta('Elemento duplicado, ignorando...'))
       }
     }
-    
 
     await getProps()
-
 
     return {
       properties: Array.from(properties),
@@ -945,4 +882,70 @@ export class Scraper {
 
   }
   */
+
+  // Ocultar sobreposições antes do OCR
+  /*
+    console.log(chalk.bgMagenta('Disabilitando popup'))
+    await this.page.evaluate(() => {
+      const elements = document.querySelectorAll('*')
+      elements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return
+  
+        const style = window.getComputedStyle(el)
+        if (style.position === 'fixed' || style.position === 'absolute') {
+          el.setAttribute('data-original-display', style.display)
+          el.style.display = 'none'
+        }
+      })
+    })
+    */
+
+  /*
+    // Restaurar estilos originais
+    await this.page.evaluate(() => {
+      const elements = document.querySelectorAll('*[data-original-display]')
+      elements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return
+    
+        const originalDisplay = el.getAttribute('data-original-display')
+        if (originalDisplay !== null) {
+          el.style.display = originalDisplay
+          el.removeAttribute('data-original-display')
+        }
+      })
+    })
+    */
+
+  /*
+    page.on('response', async (response) => {
+      const url = response.url()
+    
+      function extractImageName(url: string): string {
+        try {
+          const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
+          const segments = decodedUrl.split('/') // Divide a URL em segmentos
+          return segments.pop() || '' // Retorna o último segmento como o nome do arquivo
+        } catch (error) {
+          console.error(`Erro ao extrair o nome da imagem: ${error}`)
+          return ''
+        }
+      }
+    
+      if (response.request().resourceType() === 'image') {
+        const file = await response.buffer()
+    
+        const fileName = extractImageName(url)
+        if (!fileName) {
+          console.log(`Esse link não há o nome da imagem: ${url}`)
+          return
+        }
+    
+        console.log(chalk.bgBlue(`⬇️ Fazendo o Download: ${url}`))
+    
+        const filePath = resolve(tmpdir(), fileName)
+        await writeFile(filePath, file)
+        this.images.push(filePath)
+      }
+    })
+      */
 }

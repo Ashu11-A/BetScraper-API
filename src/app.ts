@@ -10,6 +10,7 @@ import { Fastify } from './controllers/fastify.js'
 import { Router } from './controllers/router.js'
 import Database from './database/dataSource.js'
 import { BetQueue } from './queues/BetQueue.js'
+import { runOnlyUnregistered } from 'scripts/runOnlyUnregistered.js'
 
 // await BetQueue.removeAllRepeatable()
 execSync('bun run migration:run || true', { stdio: 'inherit' })
@@ -22,7 +23,7 @@ await registerCompliances()
 await registerBets()
 BetQueue.initialize()
 
-// await registerScheduled()
+await runOnlyUnregistered()
 
 fastify.init()
 await Router.register()

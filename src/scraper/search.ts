@@ -7,7 +7,7 @@ import { existsSync } from 'fs'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import puppeteer, { Browser, ElementHandle, Page } from 'puppeteer'
+import puppeteer, { Browser, ElementHandle, HTTPResponse, Page } from 'puppeteer'
 import { Criteria } from './criteria.js'
 import { findBackgroundColor } from './lib/getBackgroundColor.js'
 import { Properties } from './properties.js'
@@ -16,6 +16,8 @@ import { OCRs } from './ocr.js'
 import axios, { AxiosError } from 'axios'
 import { createWorker, Worker } from 'tesseract.js'
 import pLimit from 'p-limit'
+import { cloudflareKeywords } from '@/shared/consts/keywords/cloudflare.js'
+import { parkingKeywords } from '@/shared/consts/keywords/parking.js'
 
 const woker: Worker = await createWorker('por', 2, { gzip: true })
 const processOCRLimit = pLimit(2)
@@ -137,10 +139,35 @@ export class Scraper {
     // this.page.on('load', () => console.log('Página carregada.'))
     // this.page.on('error', (err) => console.error('Erro na página:', err))
     // this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
-    await this.page.goto(this.url, { waitUntil: 'networkidle2' })
+    const response = await this.page.goto(this.url, { waitUntil: 'networkidle2' })
+    this.checkWebsiteStatus(response)
     // this.disableNavigation()
 
     return this
+  }
+
+  private async checkWebsiteStatus (response: HTTPResponse | null) {
+    if (!response) {
+      console.log('Error: Unable to get a response from the server.')
+      throw new Error('Unable to get a response from the server.')
+    }
+
+    const status = response.status()
+    const content = await this.page!.content()
+    console.log(chalk.bgGreen(`HTTP Status: ${status}`))
+
+
+    if (parkingKeywords.some(keyword => content.includes(keyword))) {
+      console.log(chalk.bgRed('The website is a parked domain.'))
+      throw new Error('Domain parked')
+    }
+
+    if (cloudflareKeywords.some(keyword => content.includes(keyword))) {
+      console.log(chalk.bgRed('The website appears to be protected by Cloudflare or similar services.'))
+      throw new Error('Cloudflare protected or blocked')
+    }
+
+    console.log(chalk.bgGreen('The website appears to be active and accessible.'))
   }
 
   /**

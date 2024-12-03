@@ -25,7 +25,7 @@ export class Task extends BaseEntity {
     user?: Relation<User>
   @OneToMany(() => Property, (property) => property.task, { nullable: true})
     properties?: Relation<Property[]>
-  @OneToMany(() => Property, (ocrs) => ocrs.task, { nullable: true})
+  @OneToMany(() => OCR, (ocrs) => ocrs.task, { nullable: true})
     ocrs?: Relation<OCR[]>
 
   @Column({

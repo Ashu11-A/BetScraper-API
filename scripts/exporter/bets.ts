@@ -22,12 +22,5 @@ export const betsHeader = [
   { header: 'Proporção', key: 'proportion_advisement' },
   { header: 'Início da análise', key: 'dateStart' },
   { header: 'Fim da análise', key: 'dateEnd' }
-  /*
-    { header: 'Proporção', key: 'proportion' },
-    { header: 'Avisos no topo da página', key: 'pageTop' },
-    { header: 'Avisos na página rederizada', key: 'pageRendered' },
-    { header: 'Avisos na página não rederizada', key: 'pageNotRendered' },
-    { header: 'Avisos no final da página', key: 'pageEnd' },
-  */
 ] as const
   

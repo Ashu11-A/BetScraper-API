@@ -3,14 +3,14 @@ import { Style } from 'exceljs'
 export const style: Style = {
   numFmt: 'General',
   font: {
-    size: 12,  // Ajuste o tamanho da fonte para garantir que o texto seja legível.
+    size: 12,
     bold: false,
   },
   alignment: {
-    horizontal: 'fill',  // Faz com que o texto preencha a largura da célula.
-    vertical: 'justify', // Centraliza o texto verticalmente.
-    shrinkToFit: false,  // Não encolhe o texto automaticamente.
-    indent: 0,           // Sem indentação para maximizar a área útil.
+    horizontal: 'fill',
+    vertical: 'justify',
+    shrinkToFit: false,
+    indent: 0,
   },
   protection: {},
   border: {

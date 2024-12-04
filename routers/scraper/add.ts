@@ -7,10 +7,11 @@ import { BetQueue } from '@/queues/BetQueue.js'
 import { z } from 'zod'
 
 const schema = z.object({
-  betId: z.number(),
+  betId: z.number().optional(),
+  betName: z.string().optional(),
   userId: z.number().optional(),
   cronId: z.number().optional()
-}).refine((data) => data.betId || data.cronId, {
+}).refine((data) => (data.betId || data.betName) || data.cronId, {
   message: 'At least betId or cronId must be set.',
   path: ['betId', 'cronId']
 })
@@ -31,11 +32,11 @@ export default new Router({
           })
         }
 
-        const { userId, betId, cronId } = validation.data
+        const { userId, betId, cronId, betName } = validation.data
 
         try {
           const [betRecord, userRecord, cronRecord] = await Promise.all([
-            Bet.findOneBy({ id: betId }),
+            Bet.findOneBy({ id: betId, name: betName }),
             userId ? User.findOneBy({ id: userId }) : Promise.resolve(null),
             cronId ? Cron.findOneBy({ id: cronId }) : Promise.resolve(null),
           ])

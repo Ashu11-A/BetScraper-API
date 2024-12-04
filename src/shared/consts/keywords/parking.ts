@@ -1,5 +1,5 @@
 export const parkingKeywords = [
-  'GoDaddy.com', 'GoDaddy', 'parked', 'for sale', 'domain',
+  'GoDaddy.com', 'GoDaddy', 'parked',
   'Sedo.com', 'BuyDomains.com', 'Uniregistry', 'DomainMarket.com', 'HugeDomains.com',
   'this domain is for sale', 'make an offer', 'contact us about this domain'
 ]

@@ -1,1 +1,1 @@
-export const cloudflareKeywords = ['cloudflare', 'Ray ID', 'error 1020', 'error 522']
+export const cloudflareKeywords = ['Ray ID', 'error 1020', 'error 522']

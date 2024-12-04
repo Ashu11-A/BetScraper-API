@@ -39,3 +39,8 @@ pip freeze > requirements.txt
 # https://stackoverflow.com/questions/33115325/how-to-set-redis-max-memory
 
 ```
+
+# Unable to connect. Is the computer able to access the url
+```sh
+# https://github.com/oven-sh/bun/issues/1425
+```

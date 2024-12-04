@@ -74,7 +74,6 @@ export default class DataExporter {
     props.forEach((prop) => {
       const table = prop === 'properties' ? property : ocr
       const data = prop === 'properties' ? (task.properties ?? []) : (task.ocrs ?? [])
-      if (prop === 'ocrs') console.log(task.ocrs)
         
       for (const column of this.keysSorted) {
         const type = advisementKeysHeader.find((item) => item.key === column.key) 
@@ -166,7 +165,7 @@ export default class DataExporter {
       // não pode ser scrollPercentage, se não a substituição das variaveis fica travada em 0%
         if (acc.ageRestriction === undefined || acc.ageRestriction === 'Não')  acc.ageRestriction = item.ageRestriction
         if (acc.lossWarning === undefined  || acc.lossWarning === 'Não')  acc.lossWarning = item.lossWarning
-        if (acc[key as PropKeys] === undefined && !key.includes('scrollPercentage')) {
+        if (acc[key as PropKeys] === undefined /*&& !key.includes('scrollPercentage')*/) {
           acc[key as PropKeys] = item[key as PropKeys]
         }
       })
@@ -188,20 +187,12 @@ export default class DataExporter {
     column: HeaderKeys;
     type: 'advisement' | 'legalAgeAdvisement';
   }): HeaderType {
-    const scrollPercentageType = `scrollPercentage_${type}` as const
-    const localizationType = `localization_${type}` as const
-    const ostentatiousnessType = `ostentatiousness_${type}` as const
-    const contrastType = `contrast_${type}` as const
-    const proportionType = `proportion_${type}` as const
-
     return {
       id: bet.id,
       bet: bet.name,
       url: bet.url,
       [column.key]: hasCompliance ? 'Sim' : 'Não',
 
-      localization: localization,
-      scrollPercentage: `${property?.scrollPercentage.toFixed(2) ?? '0'}%`,
       error: task.errorMessage ?? '',
       ageRestriction: hasCompliance && type === 'legalAgeAdvisement' ? 'Sim' : 'Não',
       lossWarning: property && type === 'advisement' ? 'Sim' : 'Não',
@@ -209,15 +200,19 @@ export default class DataExporter {
         ? {
           ostentatiousness: (property?.contrast ?? 0) >= 4.5 ? 'Sim' : 'Não',
           contrast:  String(property?.contrast ?? 0),
-          [ostentatiousnessType]: property?.contrast ? (property.contrast >= 4.5 ? 'Sim' : 'Não') : undefined,
-          [contrastType]: property?.contrast ?? '',
+          [`ostentatiousness_${type}`]: property?.contrast ? (property.contrast >= 4.5 ? 'Sim' : 'Não') : undefined,
+          [`contrast_${type}`]: property?.contrast ?? '',
         }
         : {}),
-      [localizationType]: localization,
-      [scrollPercentageType]: property?.scrollPercentage ? `${property.scrollPercentage.toFixed(2)}%` : undefined,
+      
+      localization: localization,
+      [`localization_${type}`]: localization,
+
+      scrollPercentage: `${property?.scrollPercentage.toFixed(2) ?? '0'}%`,
+      [`scrollPercentage_${type}`]: property?.scrollPercentage ? `${property.scrollPercentage.toFixed(2)}%` : undefined,
       
       proportion: `${property?.proportionPercentage.toFixed(2) ?? 0}%`,
-      [proportionType]: property?.proportionPercentage ? `${property.proportionPercentage.toFixed(2)}%` : undefined,
+      [`proportion_${type}`]: property?.proportionPercentage ? `${property.proportionPercentage.toFixed(2)}%` : undefined,
       
       dateStart: task.scheduledAt ? format(task.scheduledAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não inicializado',
       dateEnd: task.finishedAt ? format(task.finishedAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não finalizado',
@@ -279,8 +274,6 @@ export default class DataExporter {
             ...this.ocrs.filter((item) => item.url === bet.url),
           ]
           : this[prop].filter((item) => item.url === bet.url)
-
-        // if (prop === 'merge') console.log(properties)
 
         const data = this.mergeProperties(properties)
     

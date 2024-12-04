@@ -140,7 +140,7 @@ export class Scraper {
     // this.page.on('error', (err) => console.error('Erro na página:', err))
     // this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
     const response = await this.page.goto(this.url, { waitUntil: 'networkidle2' })
-    this.checkWebsiteStatus(response)
+    await this.checkWebsiteStatus(response)
     // this.disableNavigation()
 
     return this

@@ -2,6 +2,7 @@ import { Queue } from '@/controllers/queue.js'
 import Bet from '@/database/entity/Bet.js'
 import Compliance from '@/database/entity/Compliance.js'
 import { Cron } from '@/database/entity/Cron.js'
+import { Property } from '@/database/entity/Property.js'
 import { Task } from '@/database/entity/Task.js'
 import { User } from '@/database/entity/User.js'
 import { storagePath } from '@/index.js'
@@ -10,13 +11,10 @@ import { Scraper } from '@/scraper/search.js'
 import { DoneCallback, Job, JobOptions } from 'bull'
 import chalk from 'chalk'
 import { mkdir, writeFile } from 'fs/promises'
-import { basename, join } from 'path'
 import { nanoid } from 'nanoid'
-import { Property } from '@/database/entity/Property.js'
-import { cp } from 'fs/promises'
-import { OCRs } from '../scraper/ocr.js'
+import { join } from 'path'
 import { OCR } from '../database/entity/OCR.js'
-import { existsSync } from 'fs'
+import { OCRs } from '../scraper/ocr.js'
 
 export type AddBetQueue = {
   bet: Bet,
@@ -94,19 +92,7 @@ export class BetQueue {
       if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
       await scraper.scan()
       // await scraper.getImagesOCR()
-      const { properties: propertiesOCR, elements: elementsOCR } = await scraper.getProprietiesOCR()
-
-      console.log(propertiesOCR)
-      console.log(elementsOCR)
-      for (const [imagePath] of elementsOCR) {
-        const path = join(saveDir, '/ocr/')
-        if (!existsSync(path)) await mkdir(path, { recursive: true })
-
-        const imageName = basename(imagePath)
-        console.log(chalk.bgWhite(`Salvando Imagem em: ${join(path, imageName)}`))
-
-        cp(imagePath, join(path, imageName))
-      }
+      await scraper.saveProprietiesImage(task)
 
       // await scraper.closePopUp()
       const { elements, properties } = await scraper.getProprieties()
@@ -129,11 +115,11 @@ export class BetQueue {
 
       // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       const propertiess = await Promise.all(properties.map(async (property) => await Property.create({ ...property, task }).save()))
-      const OCRs = await Promise.all(propertiesOCR.map(async (ocr) => await OCR.create({ ...ocr, task }).save()))
+      // const OCRs = await Promise.all(propertiesOCR.map(async (ocr) => await OCR.create({ ...ocr, task }).save()))
       
       task.status = 'completed'
       task.properties = propertiess
-      task.ocrs = OCRs
+      // task.ocrs = OCRs
       task.finishedAt = new Date()
       task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
       await task.save()

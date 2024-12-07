@@ -1,8 +1,6 @@
-import Compliance from '@/database/entity/Compliance.js'
 import { BoundingBox, Viewport } from 'puppeteer'
 
 export class OCRs {
-  compliances: Compliance[]
   scrollPercentage: number
   proportionPercentage: number
   /**
@@ -36,7 +34,6 @@ export class OCRs {
     viewport,
     isVisible,
     elementBox,
-    compliances,
     isInViewport,
     distanceToTop,
     pageDimensions,
@@ -48,7 +45,6 @@ export class OCRs {
     this.viewport = viewport
     this.isVisible = isVisible
     this.elementBox = elementBox
-    this.compliances = compliances
     this.isInViewport = isInViewport
     this.distanceToTop = distanceToTop
     this.pageDimensions = pageDimensions

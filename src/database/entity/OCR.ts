@@ -1,7 +1,8 @@
-import { type Viewport } from 'puppeteer'
+import { type BoundingBox, type Viewport } from 'puppeteer'
 import { BaseEntity, Column, Entity, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
 import Compliance from './Compliance.js'
 import { Task } from './Task.js'
+import { Image } from './Image.js'
 
 @Entity({ name: 'ocrs' })
 export class OCR extends BaseEntity {
@@ -13,6 +14,8 @@ export class OCR extends BaseEntity {
     @ManyToMany(() => Compliance)
     @JoinTable()
       compliances!: Relation<Compliance[]>
+    @ManyToMany(() => Image, (image) => image.ocrs)
+      images!: Relation<Image[]>
 
     @Column('float')
       proportionPercentage!: number
@@ -62,10 +65,5 @@ export class OCR extends BaseEntity {
         },
       }
     })
-      elementBox!: {
-        width: number;
-        height: number;
-        top: number;
-        left: number;
-    }
+      elementBox!: BoundingBox
 }

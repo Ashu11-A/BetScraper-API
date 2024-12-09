@@ -7,7 +7,7 @@ import { calculateProportion } from '@/scraper/lib/proportion.js'
 import { parseRGB } from '@/scraper/lib/rgb.js'
 import { cloudflareKeywords } from '@/shared/consts/keywords/cloudflare.js'
 import { parkingKeywords } from '@/shared/consts/keywords/parking.js'
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
 import chalk from 'chalk'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
@@ -15,15 +15,15 @@ import { tmpdir } from 'os'
 import pLimit from 'p-limit'
 import { dirname, join } from 'path'
 import puppeteer, { Browser, ElementHandle, HTTPResponse, Page, PuppeteerError } from 'puppeteer'
-import { createWorker, Worker } from 'tesseract.js'
 import { Criteria } from './criteria.js'
 import { findBackgroundColor } from './lib/getBackgroundColor.js'
-import { imageHash } from './lib/hash.js'
+import { sha256 } from './lib/hash.js'
 import { Properties } from './properties.js'
 import { Screenshot } from './screenshots.js'
+import { LRUCache } from 'lru-cache'
+import { normalizeText } from './lib/normalizer.js'
 
-const woker: Worker = await createWorker('por', 2, { gzip: true })
-const processOCRLimit = pLimit(10)
+const processLimit = pLimit(10)
 
 /**
  * Tamanho da viewport da página.
@@ -57,7 +57,12 @@ export class Scraper {
    */
   public elements: Array<ElementHandle<Element>> = []
 
-  public images: string[] = []
+  private imagesCache = new LRUCache({
+    max: 1024, // Limite de itens no cache
+    maxSize: 1024 * 1024 * 1024, // Limite em MB
+    sizeCalculation: (value: Buffer) => value.length,
+    ttl: 1000 * 60 * 10 // 10 minutos
+  })
 
   /**
    * Cria uma instância da classe Scraper.
@@ -78,6 +83,7 @@ export class Scraper {
     console.log(chalk.yellow(`Bet: ${this.url} entrou na fila de processamento`))
 
     this.browser = await puppeteer.launch({
+      headless: false,
       defaultViewport: {
         height: viewport.height,
         width: viewport.width
@@ -135,17 +141,17 @@ export class Scraper {
       Object.defineProperty(navigator, 'platform', { get: () => 'Win32' })
     })
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 })
-  
+    this.saveImagesInCache()
     // this.page.on('load', () => console.log('Página carregada.'))
     // this.page.on('error', (err) => console.error('Erro na página:', err))
     // this.page.on('framenavigated', (frame) => console.log('Frame navegou:', frame.url()))
     try {
-      const response = await this.page.goto(this.url, { waitUntil: 'networkidle0', timeout: 120_000,  })
+      const response = await this.page.goto(this.url, { waitUntil: 'networkidle0', timeout: 60_000,  })
       await this.checkWebsiteStatus(response)
     } catch (error) {
       console.log(error)
 
-      if (error instanceof PuppeteerError) {
+      if (error instanceof PuppeteerError || error instanceof Error) {
         if (error.message.includes('Navigation timeout') || error.name == 'TimeoutError') return this
         throw new Error(error?.message ?? error?.name)
       }
@@ -154,6 +160,23 @@ export class Scraper {
     // this.disableNavigation()
 
     return this
+  }
+
+  private saveImagesInCache () {
+    this.page!.on('response', async (response) => {
+      try {
+        const url = response.url()
+        if (this.imagesCache.has(url)) return
+    
+        if (response.request().resourceType() === 'image') {
+          const buffer = await response.buffer()
+    
+          this.imagesCache.set(url, buffer)
+        }
+      } catch (err) {
+        console.error(chalk.bgRed(`Erro ao salvar imagem no cache: ${response?.url()}`, err))
+      }
+    })
   }
 
   private async checkWebsiteStatus (response: HTTPResponse | null) {
@@ -233,26 +256,91 @@ export class Scraper {
    * @param {ElementHandle<Element>[]} [elements] - Lista opcional de elementos para análise.
    * @returns {Promise<Compliance[]>} - Lista de instâncias de `Compliance` com as palavras encontradas.
    */
-  async find(elements?: ElementHandle<Element>[]): Promise<Compliance[]> {
+  async find(elements?: ElementHandle<Element>[]): Promise<{
+    type: 'text' | 'attributes';
+    compliance: Compliance;
+}[]> {
     elements = elements ?? this.elements
-    const compliances: Compliance[] = []
+    const compliances: {type: 'text' | 'attributes', compliance: Compliance}[] = []
 
+    
     await Promise.all(
       elements.map(async (element) => {
-        const textContent = await element.evaluate((el) => el.textContent)
-        if (typeof textContent !== 'string') return
-
+        const text = normalizeText(await this.page!.evaluate(el => el.textContent, element) ?? undefined)
+        const attributes = (await this.page!.evaluate(
+          el => Array.from(el.attributes).map(attr => attr.value),
+          element
+        )).map((values) => normalizeText(values))
+        
         for (const compliance of this.compliances) {
-          if (textContent.includes(compliance.value)) {
+          if (
+            (text && text.includes(normalizeText(compliance.value)))
+            || attributes.some(attr => attr.includes(normalizeText(compliance.value)))
+          ) {
             console.log(chalk.bgBlue(`Palavra ${compliance.value} encontrada`))
-            compliances.push(compliance)
+            compliances.push({
+              type: text ? 'text' : 'attributes',
+              compliance: compliance
+            })
           }
         }
       })
     )
 
-    console.log(chalk.yellow(`Bet: ${this.url} ${compliances.length} strings encontradas`))
+    if (compliances.length > 0) console.log(chalk.yellow(`Bet: ${this.url} ${compliances.length} strings encontradas`))
     return compliances
+  }
+
+  async filterElementsByText(searchStrings: string[]): Promise<ElementHandle<Element>[]> {
+    const filteredElements: ElementHandle<Element>[] = []
+  
+    for (const element of this.elements) {
+      // Avaliar o texto e os atributos do elemento atual
+      const textContent = normalizeText(await this.page!.evaluate(el => el.textContent, element) ?? undefined)
+      const attributes = (await this.page!.evaluate(
+        el => Array.from(el.attributes).map(attr => attr.value),
+        element
+      )).map((value) => normalizeText(value))
+  
+      const matches = searchStrings.some(
+        str =>
+          (textContent && normalizeText(textContent).includes(normalizeText(str))) ||
+          attributes.some(attr => attr.includes(normalizeText(str)))
+      )
+  
+      // Se não há correspondência, continuar para o próximo elemento
+      if (!matches) continue
+  
+      // Verificar se este elemento é redundante (ou seja, se é coberto por um filho)
+      const isCoveredByChild = await this.page!.evaluate(
+        (el, searchStrings) =>
+          Array.from(el.querySelectorAll('*')).some((child) => {
+            function normalizeText<T extends string | undefined>(text: T): T {
+              if (!text) return text
+          
+              return text
+                .normalize('NFD') // Remove diacríticos
+                .replace(/[\u0300-\u036f]/g, '') // Remove os acentos
+                .replace(/\s+/g, ' ') // Substitui múltiplos espaços por um único espaço
+                .trim() // Remove espaços no início e no fim
+                .toLowerCase() as T // Converte para minúsculas
+            }
+            return searchStrings.some(str =>
+              normalizeText(child.textContent ?? undefined)?.includes(str) ||
+              Array.from(child.attributes).some(attr => normalizeText(attr.value).includes(str))
+            )
+          }
+          ),
+        element,
+        searchStrings.map((value) => normalizeText(value))
+      )
+  
+      if (!isCoveredByChild) {
+        filteredElements.push(element)
+      }
+    }
+  
+    return filteredElements
   }
 
   findInString(text: string) {
@@ -276,8 +364,7 @@ export class Scraper {
   async getParentElementSafely(element: ElementHandle): Promise<ElementHandle<Element> | null> {
     try {
       const parent = await element.evaluateHandle((el) => {
-        const parent = el.parentElement ?? el.parentNode
-        return parent instanceof Element ? parent : null
+        return el.parentElement ?? el.parentNode
       }) as ElementHandle<Element> | null
 
       if (parent && parent.asElement()) return parent
@@ -292,61 +379,78 @@ export class Scraper {
   async saveProprietiesImage(task: Task) {
     if (!this.page) throw new Error('A variável page não foi inicializada ou elementos estão vazios.')
     if (!existsSync(join(process.cwd(), 'images'))) await mkdir(join(process.cwd(), 'images'))
-
-    const elements = await this.page.$$('*')
-
-    const elementsWithImageOrSVG = (await Promise.all(
-      elements.map(async (el) => {
-        const hasChildImageOrSvg = await el.evaluate(
-          (element) => {
-            if (element.querySelector('img')) return 'img'
-            if (element.querySelector('svg')) return 'svg'
-            
-            return null
-          }
-        )
         
-        if (!hasChildImageOrSvg) return null
-        console.log(chalk.bgGreen(`Elemento ${await this.getElementHierarchy(el)} contém uma imagem ou svg de interesse!`))
-          
-        if (hasChildImageOrSvg === 'svg') return await this.getParentElementSafely(el)
-        return el
-      }))).filter((el) => el !== null)
-    console.log(`Elementos relevantes encontrados: ${elementsWithImageOrSVG.length}`)
+    const imagesProcessed = new Set<string>()
+    const svgElements = await this.page.$$('svg')
+    const imgElements = await this.page.$$('img')
 
-    const processElement = async (element: ElementHandle<Element>) => {
+    const svgs = (
+      (await Promise.all(
+        svgElements.map(async (element) => {
+          const parent = await this.getParentElementSafely(element)
+          if (!parent) return
+
+          return ({
+            type: 'svg',
+            element: parent,
+          } as const)
+        })
+      )).filter((e) => e !== undefined)
+    )
+    
+
+    const images = [
+      ...imgElements.map((element) => ({
+        type: 'img',
+        element
+      } as const)),
+      ...svgs
+    ]
+    console.log(`Elementos relevantes encontrados: ${images.length}`)
+
+    const processElement = async (element: ElementHandle<Element> | ElementHandle<HTMLImageElement>) => {
       const elementKey = await this.getElementHierarchy(element)
-      const distanceToTop = await this.getDistanceToTop(element)
-      const isInViewport = distanceToTop <= viewport.height
-      const pageDimensions = await this.getSize()
-      const box = await element.boundingBox()
-      if (!box || box.height === 0 || box.width === 0) return
-      if (box.width > viewport.width || box.height > viewport.height) return
+      const imageURL = await (element as ElementHandle<HTMLImageElement>).evaluate((el) => el?.src)
 
-      const imageURl = await element.evaluate((el) => el.querySelector('img')?.src)
-      const imagesProcessed = new Set<string>()
-
-      let image: Buffer | null = null
-
-      console.log(imageURl)
-      console.log(elementKey)
-
-      if (imagesProcessed.has(imageURl ?? elementKey)) {
-        console.log(chalk.bgRed(`Imagem já processada: ${imageURl ?? elementKey}`))
+      const box = await this.getElementDimensions(element)
+      if (!box || box.height === 0 || box.width === 0) {
+        console.log(chalk.bgRed(`[saveProprietiesImage]: box is null, image: ${imageURL ?? elementKey}`, JSON.stringify(box, null, 2)))
         return
       }
-      imagesProcessed.add(imageURl ?? elementKey)
+      if (box.width > viewport.width || box.height > viewport.height) {
+        console.log(chalk.bgRed(`[saveProprietiesImage]: box é maior que a tela, (image: ${imageURL ?? elementKey}) (width: ${box.width}, height: ${box.height}, viewport: (${viewport.width}x${viewport.height}))`, JSON.stringify(box, null, 2)))
+        return
+      }
+
+      const distanceToTop = await this.getDistanceToTop(element)
+      const isInViewport = distanceToTop <= viewport.height
+      const pageDimensions = await this.getViewport()
+      let image: Buffer | null = null
+      
+      if (imagesProcessed.has(imageURL ?? elementKey)) {
+        console.log(chalk.bgRed(`Imagem já processada: ${imageURL ?? elementKey}`))
+        return
+      }
+      imagesProcessed.add(imageURL ?? elementKey)
 
       try {
-        if (imageURl) {
-          console.log(chalk.bgCyan(`Imagem detectada: ${imageURl}`))
-          const response = await axios.get(imageURl, { responseType: 'arraybuffer' })
-          const fileData = Buffer.from(response.data, 'binary')
-  
+        if (imageURL) {
+          console.log(chalk.bgCyan(`Imagem detectada: ${imageURL}`))
+
+          let fileData =  this.imagesCache.get(imageURL)
+          if (!fileData) {
+            const response = await axios.get(imageURL, { responseType: 'arraybuffer' })
+            fileData = Buffer.from(response.data, 'binary')
+            this.imagesCache.set(imageURL, fileData)
+          }
+
           image = await new Screenshot(fileData).toBuffer().catch(() => null)
         } else {
-          const screenshot = await element.screenshot()
+          const svgContent = await (element as ElementHandle<SVGSVGElement>).evaluate((el) =>
+            el.tagName.toLowerCase() === 'svg' ? el.outerHTML : null
+          )
 
+          const screenshot = svgContent ?? await element.screenshot()
           image = await new Screenshot(screenshot).toBuffer().catch(() => null)
         }
       } catch (err) {
@@ -355,39 +459,32 @@ export class Scraper {
       }
   
       if (!image) return
-      console.log(chalk.bgWhite(`Gerando Hash da Imagem: ${imageURl ?? elementKey}`))
-      const hash = await imageHash(image)
-      if (!hash || hash instanceof Error) { console.log(hash); return }
+      console.log(chalk.bgGreen(`Gerando Hash da Imagem: ${imageURL ?? elementKey}`))
+      const hash = sha256(image)
+      if (!hash) { console.log(hash); return }
 
       const property = OCR.create()
       let dataset = await Image.findOne({ where: { hash } })
-      if (!dataset) dataset = Image.create()
+      if (!dataset) {
+        dataset = Image.create()
+      } else {
+        console.log(chalk.bgBlue(`Imagem já foi processada anteriormente: ${imageURL ?? elementKey}`))
+      }
     
       const imagePath = join(process.cwd(), '/images/', `${hash}.png`)
+      if (!existsSync(imagePath)) await writeFile(imagePath, image)
 
       if (!dataset.hash) {
-        await writeFile(imagePath, image)
         dataset.hash = hash
+        await dataset.save()
       }
 
-      console.log(chalk.bgWhite('Criando componentes'))
       try {
         property.task = task
-        property.isHidden = await element.evaluate((el) => {
-          const style = window.getComputedStyle(el)
-          return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0'
-        }, element)
+        property.isHidden = await element.isHidden()
         property.isVisible = await element.isVisible()
         property.isInViewport = isInViewport
-        property.isIntersectingViewport = await element.evaluate((el) => {
-          const rect = el.getBoundingClientRect()
-          return (
-            rect.top >= 0 &&
-            rect.left >= 0 &&
-            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
-          )
-        }, element)
+        property.isIntersectingViewport = await element.isIntersectingViewport()
   
         property.viewport = viewport
         property.elementBox = box
@@ -401,7 +498,6 @@ export class Scraper {
         return
       }
 
-      console.log(chalk.bgWhite('Escrevendo componente no banco de dados'))
       const write = async () => {
         try {
           await property.save().then(async (ocr) => {
@@ -419,8 +515,7 @@ export class Scraper {
       await write()
     }
 
-    // Executa 2 OCRs simultaneamente
-    const tasks = elementsWithImageOrSVG.map((element) => processOCRLimit(() => processElement(element)))
+    const tasks = images.map(({ element }) => processLimit(() => processElement(element)))
     await Promise.all(tasks)
   } 
 
@@ -448,16 +543,6 @@ export class Scraper {
       )
     }
     
-    const nextChildren = async (element: ElementHandle<Element>) => {
-      const childrenHandle = await element.evaluateHandle((el) => Array.from(el.children))
-      const children = await childrenHandle.getProperties()
-      const childElements = Array.from(children.values()) as ElementHandle<Element>[]
-      const elementsChild = await this.filter(childElements)
-
-      // Processar filhos recursivamente
-      await getProps(elementsChild)
-    }
-    
     const getProps = async (elementsData?: ElementHandle<Element>[]) => {
       console.log(chalk.bgYellow(`Bet: ${this.url} coletando subPropriedades de ${(elementsData ?? this.elements).length} elementos`))
     
@@ -470,59 +555,46 @@ export class Scraper {
           continue
         }
     
-        const text = await element.evaluate((el) => el.textContent?.trim() || '')
-        if (!text || !this.compliances.some((compliance) => text.includes(compliance.value))) continue
-    
         const viewport = this.page!.viewport()
-        if (!viewport) continue
-    
-        // Verificar se o elemento possui filhos e ignorar o processamento se for o caso
-        const hasChildren = await element.evaluate((el) => el.children.length > 0)
-        if (hasChildren) {
-          await nextChildren(element)
+        if (!viewport) {
+          console.log(chalk.bgRed('viewport é null!'))
           continue
         }
     
         // Substituir o texto diretamente e reavaliar o boxModel
         const compliances = await this.find([element])
-        const replaceValue = compliances.map((compliance) => compliance.value).join(', ')
-        await element.evaluate((el, replaceValue) => (el.textContent = replaceValue), replaceValue)
+        if (compliances.length === 0) continue
+      
+        const hasCompliancesInAttributes = compliances.some((data) => data.type === 'attributes')
+        let box: Properties['elementBox'] | undefined = undefined
+        let contrastRatio: number | undefined = undefined
+        let colors: Properties['colors'] | undefined = undefined
+      
+        /**
+         * Elementos que tenham attributes, são elementos que foram identificadas as palavras chaves em seus atributos
+         * e não devem ser passados para textContent
+         */
+        if (!hasCompliancesInAttributes) {
+          const replaceValue = compliances.map((data) => data.compliance.value).join(', ')
+          await element.evaluate((el, replaceValue) => (el.textContent = replaceValue), replaceValue)
+          await element.evaluate((el) => el.textContent)
+
+          // Processar estilo e contraste
+          const { color: textColor, opacity } = await element.evaluate((el) => {
+            const style = window.getComputedStyle(el)
+            return {
+              color: style.color || style.getPropertyValue('color'),
+              opacity: parseFloat(style.opacity) || 1,
+            }
+          })
     
-        const updatedText = await element.evaluate((el) => el.textContent)
-        if (!updatedText) continue
-    
-        const box = await this.getTextSize(element)
-        if (!box || box.width === 0 || box.height === 0) continue
-    
-        // Calcular distância do topo
-        const distanceToTop = await this.getDistanceToTop(element)
-    
-        // Processar estilo e contraste
-        const { color: textColor, opacity } = await element.evaluate((el) => {
-          const style = window.getComputedStyle(el)
-          return {
-            color: style.color || style.getPropertyValue('color'),
-            opacity: parseFloat(style.opacity) || 1,
-          }
-        })
-    
-        const backgroundColor = await findBackgroundColor(element)
-        const [r2, g2, b2] = parseRGB(backgroundColor, 1)
-        const [r1, g1, b1] = parseRGB(textColor, opacity, [r2, g2, b2])
-        const contrastRatio = calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
-    
-        const pageDimensions = await this.getSize()
-        const isInViewport = distanceToTop <= viewport.height
-    
-        console.log(chalk.bgRed(`Proporção: ${calculateProportion(box.width, viewport.width)}, ${box.width}, ${viewport.width}`))
-    
-        // Criar propriedades do elemento
-        const newProperty = new Properties({
-          compliances,
-          contrast: contrastRatio,
-          proportionPercentage: calculateProportion(box.width, viewport.width),
-          scrollPercentage: calculateProportion(distanceToTop, pageDimensions.height),
-          colors: {
+          const backgroundColor = await findBackgroundColor(element)
+          const [r2, g2, b2] = parseRGB(backgroundColor, 1)
+          const [r1, g1, b1] = parseRGB(textColor, opacity, [r2, g2, b2])
+
+          box = await this.getTextDimensions(element) ?? undefined
+          contrastRatio = calculateContrastRatio([r1, g1, b1], [r2, g2, b2])
+          colors = {
             text: {
               value: textColor,
               color: [r1, g1, b1],
@@ -531,8 +603,31 @@ export class Scraper {
               value: backgroundColor,
               color: [r2, g2, b2],
             },
-          },
-          isIntersectingViewport: await element.isIntersectingViewport(),
+          }
+        } else {
+          box = await this.getElementDimensions(element)
+        }
+        if (!box || box.width === 0 || box.height === 0) {
+          console.log(chalk.bgRed('Tamanho da box é 0!', JSON.stringify(box, null, 2)))
+          continue
+        }
+
+    
+        // Calcular distância do topo
+        const distanceToTop = await this.getDistanceToTop(element)
+        const hasChildren = await element.evaluate((el) => el.children.length > 0)
+    
+        const pageDimensions = await this.getViewport()
+        const isInViewport = distanceToTop <= viewport.height
+    
+        // Criar propriedades do elemento
+        const newProperty = new Properties({
+          compliances: compliances.map((data) => data.compliance),
+          contrast: contrastRatio,
+          proportionPercentage: calculateProportion(box.width, viewport.width),
+          scrollPercentage: calculateProportion(distanceToTop, pageDimensions.height),
+          colors,
+          isIntersectingViewport: await element.isIntersectingViewport().catch(() => undefined),
           isVisible: await element.isVisible(),
           isHidden: await element.isHidden(),
           hasChildNodes: hasChildren,
@@ -553,42 +648,14 @@ export class Scraper {
       }
     }
 
-    await getProps()
+    const filteredElements = Array.from((await this.filterElementsByText(this.compliances.map((compliance) => compliance.value))).values())
+    console.log(chalk.bgMagenta(`Elementos HTML encontrados: ${filteredElements.length}`))
+    await getProps(filteredElements)
 
     return {
       properties: Array.from(properties),
       elements: Array.from(elements)
     }
-  }
-
-  async getTextSize (element: ElementHandle<Element>) {
-    return await element.evaluate((el) => {
-      const range = document.createRange()
-      const textNode = el.firstChild
-  
-      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
-        return null // Sem texto direto no elemento
-      }
-  
-      // Define o range para abranger apenas o texto do elemento
-      range.selectNodeContents(textNode)
-  
-      const rect = range.getBoundingClientRect()
-      return {
-        width: rect.width,
-        height: rect.height,
-        top: rect.top + window.scrollY,
-        left: rect.left + window.scrollX,
-      }
-    })
-  }
-
-  async getDistanceToTop (element: ElementHandle<Element>) {
-    return await element.evaluate((el) => {
-      const rect = el.getBoundingClientRect()
-      const scrollTop = window.scrollY || document.documentElement.scrollTop
-      return rect.top + scrollTop
-    })
   }
 
   async getElementHierarchy (element: ElementHandle<Element>) {
@@ -612,7 +679,7 @@ export class Scraper {
    * @async
    * @returns {Promise<{ width: number, height: number }>}
    */
-  async getSize (): Promise<{
+  async getViewport (): Promise<{
     width: number,
     height: number
   }> {
@@ -620,23 +687,23 @@ export class Scraper {
     let height = 0
 
     const width = await this.page!.evaluate(() => Math.max(
-      document.body.scrollWidth,
-      document.documentElement.scrollWidth,
-      document.body.offsetWidth,
-      document.documentElement.offsetWidth,
-      document.documentElement.clientWidth
+      document?.body?.scrollWidth,
+      document?.documentElement?.scrollWidth,
+      document?.body?.offsetWidth,
+      document?.documentElement?.offsetWidth,
+      document?.documentElement?.clientWidth
     ))
 
     for (const element of elements) {
       const pageDimensions = await element.evaluate((el) => {
         const height = Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.offsetHeight,
-          document.documentElement.clientHeight,
-          el.scrollHeight,
-          el.clientHeight
+          document?.body?.scrollHeight,
+          document?.documentElement?.scrollHeight,
+          document?.body?.offsetHeight,
+          document?.documentElement?.offsetHeight,
+          document?.documentElement?.clientHeight,
+          el?.scrollHeight,
+          el?.clientHeight
         )
       
         return { height }
@@ -646,6 +713,77 @@ export class Scraper {
     }
     return { width, height }
   }
+
+  async getDistanceToTop (element: ElementHandle<Element>) {
+    return await element.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      const scrollTop = window.scrollY || document.documentElement.scrollTop
+      return rect.top + scrollTop
+    })
+  }
+
+  async getElementDimensions(element: ElementHandle<Element>) {
+    const boundingBox = await element.boundingBox()
+  
+    const boxWidth = boundingBox?.width || null
+    const boxHeight = boundingBox?.height || null
+  
+    return await element.evaluate((el, { boxWidth, boxHeight }) => {
+      const rect = el.getBoundingClientRect()
+  
+      let width = boxWidth && boxWidth !== 0 ? boxWidth : rect.width
+      let height = boxHeight && boxHeight !== 0 ? boxHeight : rect.height
+  
+      // Para imagens
+      if (el instanceof HTMLImageElement) {
+        if (width === 0) width = el.naturalWidth
+        if (height === 0) height = el.naturalHeight
+      }
+
+      // Para SVGs
+      if (el instanceof SVGGraphicsElement || typeof (el as SVGGraphicsElement)?.getBBox === 'function') {
+        const bbox = (el as SVGGraphicsElement).getBBox()
+        if (width === 0) width = bbox.width
+        if (height === 0) height = bbox.height
+      }
+  
+      // Fallbacks adicionais
+      if (width === 0 && el?.scrollWidth !== null) width = el.scrollWidth
+      if (height === 0 && el?.scrollHeight !== null) height = el.scrollHeight
+  
+      return {
+        width,
+        height,
+        top: rect.top + window.scrollY, // Considera o deslocamento do scroll
+        left: rect.left + window.scrollX, // Considera o deslocamento do scroll
+      }
+    }, { boxWidth, boxHeight })
+  }
+  
+  
+
+  async getTextDimensions (element: ElementHandle<Element>) {
+    return await element.evaluate((el) => {
+      const range = document.createRange()
+      const textNode = el.firstChild
+  
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+        return null // Sem texto direto no elemento
+      }
+  
+      // Define o range para abranger apenas o texto do elemento
+      range.selectNodeContents(textNode)
+  
+      const rect = range.getBoundingClientRect()
+      return {
+        width: rect.width,
+        height: rect.height,
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX,
+      }
+    })
+  }
+
 
   /**
    * Screenshot da tela rederizada atualmente
@@ -716,15 +854,24 @@ export class Scraper {
         await writeFile(tempImagePath, await screenshot.greyscale().gaussian().toBuffer())
 
         // Realiza OCR na imagem temporária
-        const { data } = await woker.recognize(tempImagePath, {}, { text: true })
-        const imgText = data.text
-        const criterias = new Criteria({}).setCriterias(imgText)
+        const request = await axios.post(
+          'http://localhost:5000/ocr',
+          { imagePath: tempImagePath },
+          { timeout: 0 }
+        )
+        const text = request.data.result as string[]
+
+        const criterias = new Criteria({}).setCriterias(text)
         if (criterias.hasIrregularity) filteredScreenshot.set(Number(index), new Screenshot(screenshot.image))
 
-        const countKeywords = this.compliances.filter((compliance) => data.text.includes(compliance.value)).length
+        const countKeywords = this.compliances.filter((compliance) => normalizeText(text).includes(normalizeText(compliance.value))).length
         console.log(chalk.red(`${countKeywords} palavras/frases foram encontradas na pagina: ${this.url}`))
       } catch (err) {
-        console.log(err)
+        if (err instanceof AxiosError) {
+          if (String(err?.response?.data?.error).includes('Nenhum texto detectado na imagem.')) {
+            console.log(chalk.bgGreen('Nenhum texto detectado na imagem.'))
+          }
+        }
       }
     }
 
@@ -772,10 +919,9 @@ export class Scraper {
    * @returns {Promise<void>}
    */
   async destroy(): Promise<void> {
-    if(this.page && !this.page.isClosed()) {
-      console.log(chalk.red('Closing page...'))
-      await this.page.close()
-    }
+    console.log(chalk.red('browser page...'))
+    await this.browser.close()
+    this.imagesCache.clear()
 
     console.log(chalk.red(`Bet: ${this.url} memória desalocada`))
   }
@@ -833,42 +979,6 @@ export class Scraper {
   //   await this.page.mouse.click(moveX, moveY)
   // }
 
-  /*
-  async getImagesOCR () {
-    const imagesFiltered = new Map<string, Compliance[]>()
-    const imagesHasError: string[] = []
-
-    for (const path of this.images) {
-      console.log(path)
-      try {
-        const request = await axios.post(
-          'http://localhost:5000/ocr',
-          { imagePath: path },
-          { timeout: 0 }
-        )
-
-        if (request.status !== 200) {
-          imagesHasError.push(path)
-          continue
-        }
-
-        console.log(request.data)
-
-        const compliances = this.findInString(request.data.result)
-        if (compliances.length > 0) imagesFiltered.set(path, compliances)
-      } catch (e) {
-        if (e instanceof AxiosError) {
-          console.log(e.response?.data)
-        }
-        imagesHasError.push(path)
-      }
-    }
-
-    return { elements: imagesFiltered, errors: imagesHasError }
-
-  }
-  */
-
   // Ocultar sobreposições antes do OCR
   /*
     console.log(chalk.bgMagenta('Disabilitando popup'))
@@ -901,37 +1011,4 @@ export class Scraper {
       })
     })
     */
-
-  /*
-    page.on('response', async (response) => {
-      const url = response.url()
-    
-      function extractImageName(url: string): string {
-        try {
-          const decodedUrl = decodeURIComponent(url) // Decodifica os caracteres da URL
-          const segments = decodedUrl.split('/') // Divide a URL em segmentos
-          return segments.pop() || '' // Retorna o último segmento como o nome do arquivo
-        } catch (error) {
-          console.error(`Erro ao extrair o nome da imagem: ${error}`)
-          return ''
-        }
-      }
-    
-      if (response.request().resourceType() === 'image') {
-        const file = await response.buffer()
-    
-        const fileName = extractImageName(url)
-        if (!fileName) {
-          console.log(`Esse link não há o nome da imagem: ${url}`)
-          return
-        }
-    
-        console.log(chalk.bgBlue(`⬇️ Fazendo o Download: ${url}`))
-    
-        const filePath = resolve(tmpdir(), fileName)
-        await writeFile(filePath, file)
-        this.images.push(filePath)
-      }
-    })
-      */
 }

@@ -26,7 +26,7 @@ export class Property extends BaseEntity implements Properties {
     @JoinTable()
       compliances!: Relation<Compliance[]>
 
-    @Column('float')
+    @Column('float', { nullable: true })
       contrast!: number
     @Column('float')
       proportionPercentage!: number
@@ -35,7 +35,7 @@ export class Property extends BaseEntity implements Properties {
     @Column('float')
       distanceToTop!: number
 
-    @Column('bool')
+    @Column('bool', { nullable: true })
       isIntersectingViewport!: boolean
     @Column('bool')
       isVisible!: boolean
@@ -47,6 +47,7 @@ export class Property extends BaseEntity implements Properties {
       isInViewport!: boolean
 
     @Column('simple-json', {
+      nullable: true,
       transformer: {
         to(value: string): string {
           return JSON.stringify(value)
@@ -57,6 +58,7 @@ export class Property extends BaseEntity implements Properties {
       }
     })
       colors!: Colors
+
     @Column('simple-json', {
       transformer: {
         to(value: string): string {
@@ -68,6 +70,7 @@ export class Property extends BaseEntity implements Properties {
       }
     })
       viewport!: Viewport
+
     @Column('simple-json', {
       transformer: {
         to(value: string): string {
@@ -79,6 +82,7 @@ export class Property extends BaseEntity implements Properties {
       }
     })
       pageDimensions!: { width: number, height: number }
+
     @Column('simple-json', {
       transformer: {
         to(value: string): string {

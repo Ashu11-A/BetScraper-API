@@ -68,7 +68,6 @@ export class BetQueue {
   static async process(job: Job<BetQueueType>, done: DoneCallback) {
     if (job.data.id === undefined || Number.isNaN(job.data.id)) return
     console.log(`Job ID ${job.id} ativado.`)
-    let scraper: Scraper | null = null
     const task = await Task.create({
       bet: job.data.bet,
       user: job.data.user,
@@ -76,25 +75,21 @@ export class BetQueue {
       scheduledAt: new Date(),
       status: 'running'
     }).save()
-  
+    const compliances = await Compliance.find()
+    const scraper = new Scraper(task.bet.url, compliances)
+
     try {
-      const saveDir = join(storagePath, `/tasks/${task.id}/bets/${task.bet.id}/${new Date(task.createdAt).getTime()}`)
+      const saveDir = join(storagePath, `/bets/${task.bet.id}/${task.id}/`)
       await mkdir(saveDir, { recursive: true })
-
-      const compliances = await Compliance.find()
-      if (compliances.length === 0) throw new Error('No compliances recorded in the database')
-
-      scraper = new Scraper(task.bet.url, compliances)
 
       await scraper.loadPage()
       await scraper.savePageContent(saveDir)
       const initImage = await scraper.getScreenshot()
       if (initImage) await writeFile(join(saveDir, '/initial.png'), initImage)
+
       await scraper.scan()
-      // await scraper.getImagesOCR()
       await scraper.saveProprietiesImage(task)
 
-      // await scraper.closePopUp()
       const { elements, properties } = await scraper.getProprieties()
       const screenshots = await scraper.filterScreenshots(await scraper.getScreenshots(elements))
   
@@ -113,19 +108,16 @@ export class BetQueue {
       }
       await writeFile(join(saveDir, '/metadata.json'), JSON.stringify(metadata, null, 2))
 
-      // Isso vai para BetQueue.queue.on('completed'), aqui é passado um array de IDs, onde serão processados na conclusão
       const propertiess = await Promise.all(properties.map(async (property) => await Property.create({ ...property, task }).save()))
-      // const OCRs = await Promise.all(propertiesOCR.map(async (ocr) => await OCR.create({ ...ocr, task }).save()))
       
       task.status = 'completed'
       task.properties = propertiess
-      // task.ocrs = OCRs
       task.finishedAt = new Date()
       task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
+    
       await task.save()
-
       await scraper.destroy()
-      
+
       done(null, {
         /*
         task,
@@ -134,18 +126,25 @@ export class BetQueue {
         */
       })
     } catch (error) {
-      await scraper?.destroy()
-      await writeFile(`error-job[${job.id}]-bet[${job.data.bet.id}].json`, JSON.stringify(error))
-      console.error(`Erro no Job ID ${job.id}:`, error)
+      console.error(chalk.bgRed(`Erro no Job ID ${job.id}`))
+      
+      const errorDetails = {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        rawError: typeof error === 'object' ? JSON.stringify(error) : String(error),
+        timestamp: new Date().toISOString(),
+      }
 
-      if (!(error instanceof Error)) return done(error as Error)
-      console.error(`Job ID ${job.id} falhou.`)
+      await scraper.destroy()
+      await writeFile(`error-job[${job.id}]-bet[${job.data.bet.id}].json`, JSON.stringify(errorDetails, null, 2))
 
-      task.errorMessage = error.message
+      task.errorMessage = errorDetails.message !== 'Unknown error'
+        ? errorDetails.message
+        : errorDetails.rawError
       task.status = 'failed'
       task.duration = (new Date().getTime() - new Date(task.scheduledAt!).getTime()) / 1000
-      await task.save()
 
+      await task.save()
       done(error as Error)
     }
   }

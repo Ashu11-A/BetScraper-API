@@ -1,8 +1,13 @@
-import { type BoundingBox, type Viewport } from 'puppeteer'
+import { type Viewport } from 'puppeteer'
 import { BaseEntity, Column, Entity, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm'
 import Compliance from './Compliance.js'
-import { Task } from './Task.js'
 import { Image } from './Image.js'
+import { Task } from './Task.js'
+
+export enum ImageType {
+  IMG = 'img',
+  SVG = 'svg',
+}
 
 @Entity({ name: 'ocrs' })
 export class OCR extends BaseEntity {
@@ -23,6 +28,13 @@ export class OCR extends BaseEntity {
       scrollPercentage!: number
     @Column('float')
       distanceToTop!: number
+
+    @Column({
+      type: 'enum',
+      enum: ImageType,
+      default: ImageType.IMG
+    })
+      type!: 'img' | 'svg'
   
     @Column('bool')
       isIntersectingViewport!: boolean
@@ -65,5 +77,10 @@ export class OCR extends BaseEntity {
         },
       }
     })
-      elementBox!: BoundingBox
+      elementBox!: {
+        width: number;
+        height: number;
+        top: number;
+        left: number;
+    }
 }

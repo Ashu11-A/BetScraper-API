@@ -25,6 +25,7 @@ pip install -r requirements.txt
 
 # WSL2
 # export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+# source ~/anaconda3/etc/profile.d/conda.sh
 python3 api.py
 ```
 

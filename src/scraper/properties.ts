@@ -10,7 +10,7 @@ export class Properties {
    * @link https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html
    * @type {number}
    */
-  contrast: number
+  contrast?: number
   scrollPercentage: number
   proportionPercentage: number
   
@@ -28,9 +28,9 @@ export class Properties {
    *
    * @type {boolean}
    */
-  isIntersectingViewport: boolean
+  isIntersectingViewport?: boolean
   
-  colors: {
+  colors?: {
     text: {
       value: string
       color: [number, number, number]

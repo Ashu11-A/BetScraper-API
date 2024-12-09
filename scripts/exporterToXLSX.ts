@@ -7,14 +7,15 @@ import { Column, Exporter } from '@/exporter/exporter.js'
 import { format } from 'date-fns'
 import { writeFile } from 'fs/promises'
 import { betsHeader } from './exporter/bets.js'
-import { style } from './exporter/style.js'
 import { advisementKeysHeader, keysHeader } from './exporter/warns.js'
 
 type PropKeys = typeof betsHeader[number]['key'];
-type HeaderKeys = typeof keysHeader[number];
 type Prop = Partial<Record<PropKeys, string | number>>;
 type PropertyData = ReturnType<DataExporter['getPropertyData']>;
-type HeaderType = Partial<Record<ReturnType<DataExporter['createHeader']>[number]['key'], string | number>> & Prop;
+
+type HeaderProp = typeof keysHeader[number];
+type HeaderKeys = ReturnType<DataExporter['createHeader']>[number]['key']
+type HeaderType = Partial<Record<HeaderKeys, string | number>> & Prop;
 
 export default class DataExporter {
   private bets: Bet[] = []
@@ -76,7 +77,7 @@ export default class DataExporter {
       const data = prop === 'properties' ? (task.properties ?? []) : (task.ocrs ?? [])
         
       for (const column of this.keysSorted) {
-        const type = advisementKeysHeader.find((item) => item.key === column.key) 
+        const type = advisementKeysHeader.find((item) => item.key === column.key)
           ? 'advisement' 
           : 'legalAgeAdvisement'
 
@@ -89,7 +90,6 @@ export default class DataExporter {
           .createWorksheet(column.header)
           .setColumns<typeof header>(header)
           .addRow<typeof header>(row)
-          .setStyle(style)
           .ajustColumn()
   
         this[prop].push(row)
@@ -108,7 +108,7 @@ export default class DataExporter {
     })
   }
 
-  private createHeader(name: HeaderKeys['header'], key: HeaderKeys['key']) {
+  private createHeader(name: HeaderProp['header'], key: HeaderProp['key']) {
     return [
       { header: 'Id', key: 'id' },
       { header: 'Bet', key: 'bet' },
@@ -124,7 +124,7 @@ export default class DataExporter {
     ] as const
   }
 
-  private getPropertyData(data: Property[] | OCR[], column: HeaderKeys) {
+  private getPropertyData(data: Property[] | OCR[], column: HeaderProp) {
     const hasCompliance = data.some((prop) => Array.isArray(prop?.compliances) && prop.compliances.some((compliance) => compliance.value === column.header))
     
     const property = this.findMostRelevantData(data, column.header)
@@ -133,45 +133,49 @@ export default class DataExporter {
     return { property, localization, hasCompliance }
   }
 
-  private mergeProperties(property: Prop[]): Prop {
-    return property.reduce((acc, item) => {
+  private mergeProperties(properties: Prop[]): Prop {
+    return properties.sort((a, b) => Number(a.id) - Number(b.id)).reduce((acc, item) => {
       if (!acc.bet) {
         Object.assign(acc, item)
         return acc
       }
   
-      const currentType = item.scrollPercentage_legalAgeAdvisement !== undefined
+      const typeKey = item.scrollPercentage_advisement !== undefined
         ? 'legalAgeAdvisement'
         : 'advisement'
   
-      const scrollKey = `scrollPercentage_${currentType}` as const
-      const localizationKey = `localization_${currentType}` as const
-      const ostentatiousnessKey = `ostentatiousness_${currentType}` as const
-      const contrastKey = `contrast_${currentType}` as const
+      const createKey = (base: Exclude<HeaderKeys, PropKeys>) => `${base}_${typeKey}` as const
   
-      const currentScroll = parseFloat(String(acc[scrollKey]))
-      const newScroll = parseFloat(String(item[scrollKey]))
+      const scrollKey = createKey('scrollPercentage')
+      const localizationKey = createKey('localization')
+      const ostentatiousnessKey = createKey('ostentatiousness')
+      const contrastKey = createKey('contrast')
   
-      if (/*newScroll > 0 && */newScroll < currentScroll) {
+      const currentScroll = parseFloat(String(acc[scrollKey])) || Infinity
+      const newScroll = parseFloat(String(item[scrollKey])) || Infinity
+  
+      // Atualiza se `newScroll` for menor.
+      if (newScroll < currentScroll) {
         acc[scrollKey] = item[scrollKey]
         acc[localizationKey] = item[localizationKey]
         acc[ostentatiousnessKey] = item[ostentatiousnessKey]
         acc[contrastKey] = item[contrastKey]
       }
   
-      // Adicionar outras chaves, se não existirem
       Object.keys(item).forEach((key) => {
-      // Adiciona a chave se ela não estiver no acc (undefined)
-      // não pode ser scrollPercentage, se não a substituição das variaveis fica travada em 0%
-        if (acc.ageRestriction === undefined || acc.ageRestriction === 'Não')  acc.ageRestriction = item.ageRestriction
-        if (acc.lossWarning === undefined  || acc.lossWarning === 'Não')  acc.lossWarning = item.lossWarning
-        if (acc[key as PropKeys] === undefined /*&& !key.includes('scrollPercentage')*/) {
-          acc[key as PropKeys] = item[key as PropKeys]
+        const typedKey = key as PropKeys
+  
+        if (
+          acc[typedKey] === undefined
+          || ['Não encontrada', 'Não'].includes(acc[typedKey].toString())
+          // && !key.startsWith('scrollPercentage')
+        ) {
+          acc[typedKey] = item[typedKey]
         }
       })
   
       return acc
-    }, {} as Partial<Record<PropKeys, string>>)
+    }, {} as Partial<Record<PropKeys, string | number | undefined>>)
   }
 
   private createRow({
@@ -184,18 +188,18 @@ export default class DataExporter {
     bet: Bet;
     task: Task;
     properties: PropertyData;
-    column: HeaderKeys;
+    column: HeaderProp;
     type: 'advisement' | 'legalAgeAdvisement';
   }): HeaderType {
     return {
       id: bet.id,
       bet: bet.name,
       url: bet.url,
-      [column.key]: hasCompliance ? 'Sim' : 'Não',
+      [column.key]: hasCompliance ? 'Presente' : 'Não encontrada',
 
       error: task.errorMessage ?? '',
-      ageRestriction: hasCompliance && type === 'legalAgeAdvisement' ? 'Sim' : 'Não',
-      lossWarning: property && type === 'advisement' ? 'Sim' : 'Não',
+      ageRestriction: hasCompliance && type === 'legalAgeAdvisement' ? 'Presente' : 'Não encontrada',
+      lossWarning: property && type === 'advisement' ? 'Presente' : 'Não encontrada',
       ...(this.isProperty(property)
         ? {
           ostentatiousness: (property?.contrast ?? 0) >= 4.5 ? 'Sim' : 'Não',
@@ -214,8 +218,8 @@ export default class DataExporter {
       proportion: `${property?.proportionPercentage.toFixed(2) ?? 0}%`,
       [`proportion_${type}`]: property?.proportionPercentage ? `${property.proportionPercentage.toFixed(2)}%` : undefined,
       
-      dateStart: task.scheduledAt ? format(task.scheduledAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não inicializado',
-      dateEnd: task.finishedAt ? format(task.finishedAt, 'dd/MM/yyyy às HH:mm:ss') : 'Não finalizado',
+      dateStart: task.scheduledAt ? format(task.scheduledAt, 'dd/MM/yyyy \'às\' HH:mm:ss') : 'Detectou-se um erro.',
+      dateEnd: format(task?.finishedAt ?? task.updatedAt, 'dd/MM/yyyy \'às\' HH:mm:ss'),
     }
   }
 
@@ -225,22 +229,67 @@ export default class DataExporter {
 
       if (
         compliance &&
-        // current.proportionPercentage > 0 &&
-        (!smallest || current.distanceToTop < smallest.distanceToTop)
+        current.proportionPercentage > 0 &&
+        current.proportionPercentage < 100 &&
+        (!smallest || current.proportionPercentage < smallest.proportionPercentage || current.distanceToTop < smallest.distanceToTop)
       ) {
         return current
       }
       return smallest
     }, undefined as Property | OCR | undefined)
   }
+  
+  findMostRelevantData2(props: Property[] | OCR[], columnName: string) {
+    // Calculate the smallest proportionPercentage and smallest distanceToTop
+    const smallestData = props.reduce(
+      (smallest, current) => {
+        const compliance = current.compliances?.find((compliance) => compliance.value.includes(columnName))
+  
+        if (
+          compliance &&
+          current.proportionPercentage > 0 &&
+          current.proportionPercentage < 100 &&
+          (!smallest || current.proportionPercentage < smallest.proportionPercentage || 
+            (current.proportionPercentage === smallest.proportionPercentage && current.distanceToTop < smallest.distanceToTop))
+        ) {
+          return current
+        }
+        return smallest
+      },
+      undefined as Property | OCR | undefined
+    )
+  
+    if (smallestData) {
+      // Calculate the average values
+      const totalData = props.reduce((acc, current) => {
+        const compliance = current.compliances?.find((compliance) => compliance.value.includes(columnName))
+        if (compliance && current.proportionPercentage > 0 && current.proportionPercentage < 100) {
+          return {
+            proportionPercentage: acc.proportionPercentage + current.proportionPercentage,
+            distanceToTop: acc.distanceToTop + current.distanceToTop,
+            count: acc.count + 1
+          }
+        }
+        return acc
+      }, { proportionPercentage: 0, distanceToTop: 0, count: 0 })
+  
+      const averageProportionPercentage = totalData.proportionPercentage / totalData.count
+      const averageDistanceToTop = totalData.distanceToTop / totalData.count
+  
+      // Return the Property or OCR that matches the average
+      return props.find((item) => 
+        item.proportionPercentage === averageProportionPercentage && 
+        item.distanceToTop === averageDistanceToTop
+      )
+    }
+  
+    return undefined
+  }  
 
   private getLocalization(property?: Property | OCR): string {
-    if (!property?.scrollPercentage) return 'Não existe'
-    if (property.scrollPercentage <= 0) return 'Hidden'
-    if (property.scrollPercentage <= 5) return 'Topo da página'
-    if (property.scrollPercentage >= 95) return 'Final da página'
+    if (property === undefined) return 'Não encontrada'
   
-    return property.isInViewport ? 'Na página renderizada' : 'Na parte não renderizada'
+    return property.isInViewport ? 'Área renderizada' : 'Área não renderizada'
   }
 
   private async finalizeExport() {
@@ -253,7 +302,7 @@ export default class DataExporter {
     await writeFile('properties.json', JSON.stringify(this.properties, null, 2))
     await writeFile('tasks.json', JSON.stringify(this.tasks, null, 2))
 
-
+    
     props.forEach(async (prop) => {
       const table = prop === 'properties'
         ? property
@@ -274,7 +323,6 @@ export default class DataExporter {
             ...this.ocrs.filter((item) => item.url === bet.url),
           ]
           : this[prop].filter((item) => item.url === bet.url)
-
         const data = this.mergeProperties(properties)
     
         table.useWorkshet('Geral')

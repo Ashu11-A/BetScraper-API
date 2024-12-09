@@ -9,8 +9,8 @@ export class Image extends BaseEntity {
     @Column({ type: 'text' })
       hash!: string
 
-    @Column({ type: 'text', nullable: true })
-      content!: string
+    @Column({ type: 'simple-array', nullable: true })
+      content!: string[] | null
 
     @ManyToMany(() => OCR, (ocr) => ocr.images, { cascade: true })
     @JoinTable()

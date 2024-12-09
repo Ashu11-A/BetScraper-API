@@ -4,7 +4,7 @@ import sharp, { Sharp } from 'sharp'
 export class Screenshot {
   private processedImg: Sharp
 
-  constructor(public image: Uint8Array) {
+  constructor(public image: Uint8Array | string) {
     this.processedImg = sharp(image)
   }
 
@@ -32,7 +32,11 @@ export class Screenshot {
   async resize() {
     const metadata = await this.processedImg.metadata()
 
-    // console.log(metadata)
+    if (metadata.width! < 3 || metadata.height! < 3) {
+      console.log(chalk.bgYellow('Ignorando imagem menor que 3x3!'))
+      return
+    }
+  
     if (metadata.format === 'svg') {
       if (metadata.width! <= 512 && metadata.height! <= 512) return
 
@@ -42,7 +46,6 @@ export class Screenshot {
 
     if (['png', 'jpg', 'webp', 'jpeg'].includes(metadata?.format ?? '')) {
       if (metadata.width! <= 1024 && metadata.height! <= 1024) {
-        console.log(chalk.bgRed('Imagem é menor que 1024!'))
         return
       }
 

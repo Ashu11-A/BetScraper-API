@@ -1,22 +1,7 @@
-import { BufferObject, imageHash as Hash, UrlRequestObject } from 'image-hash'
+import { createHash } from 'crypto'
 
-export async function imageHash(data: string | Buffer) {
-  return new Promise<string | undefined | Error>((resolve, reject) => {
-    let config: UrlRequestObject | BufferObject
 
-    if (data instanceof Buffer) {
-      config = {
-        data
-      }
-    } else if (typeof data === 'string') {
-      config = {
-        url: data
-      }
-    }
-
-    Hash(config!, 16, true, (error: Error, hash: string | undefined) => {
-      if (error) reject(error)
-      resolve(hash)
-    })
-  })
-}
+/**
+ * Hashes a buffer using SHA-256
+ */
+export const sha256 = (data: Buffer<ArrayBufferLike> | string) => createHash('sha256').update(data).digest('hex')

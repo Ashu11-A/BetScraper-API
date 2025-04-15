@@ -1,6 +1,6 @@
 <div align="center">
 
-# BetScraper API
+# BetScraper
 
 ![license-info](https://img.shields.io/badge/license-Ashu11%2D%2DA-a?style=for-the-badge&colorA=302D41&colorB=f9e2af&logoColor=f9e2af&logo=AdBlock)
 ![stars-infoa](https://img.shields.io/github/stars/Ashu11-A/BetScraper-API?colorA=302D41&colorB=f9e2af&style=for-the-badge)

@@ -2,7 +2,7 @@
 
 # BetScraper
 
-![license-info](https://img.shields.io/badge/license-Ashu11%2D%2DA-a?style=for-the-badge&colorA=302D41&colorB=f9e2af&logoColor=f9e2af&logo=AdBlock)
+![license-info](https://img.shields.io/github/license/Ashu11-A/AST-Shell?style=for-the-badge&colorA=302D41&colorB=f9e2af&logoColor=f9e2af)
 ![stars-infoa](https://img.shields.io/github/stars/Ashu11-A/BetScraper-API?colorA=302D41&colorB=f9e2af&style=for-the-badge)
 
 ![Last-Comitt](https://img.shields.io/github/last-commit/Ashu11-A/BetScraper-API?style=for-the-badge&colorA=302D41&colorB=b4befe)
